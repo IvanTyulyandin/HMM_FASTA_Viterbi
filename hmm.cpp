@@ -1,5 +1,6 @@
 #include "hmm.h"
 
+#include <cmath>
 #include <fstream>
 #include <iostream>
 
@@ -31,6 +32,20 @@ namespace {
         fst = std::strtof(data.data(), &rest_of_line);
         snd = std::strtof(rest_of_line, nullptr);
     }
+
+
+    template <int N>
+    Probabilities<N> parse_probabilities(std::string_view floats_view) {
+        auto res = Probabilities<N>();
+        floats_view.remove_prefix(floats_view.find_first_not_of(' '));
+
+        for (auto i = 0; i < N; ++i) {
+            res[i] = std::exp(-1 * std::strtof(floats_view.data(), nullptr));
+            skip_next_words(floats_view, 1);
+        }
+
+        return res;
+    }
 }
 
 
@@ -42,13 +57,15 @@ Hmm::Hmm(const std::string& file_path) {
     }
     extract_length(file);
     extract_stats_local(file);
+    extract_probabilities(file);
 
     file.close();
 }
 
 
 void Hmm::extract_length(std::ifstream& file) {
-    length = std::stoi(read_value_after_tag(file, "LENG"));
+    // expecting LENG x
+    model_length = std::stoi(read_value_after_tag(file, "LENG"));
 }
 
 
@@ -69,5 +86,33 @@ void Hmm::extract_stats_local(std::ifstream& file) {
             case 'F': // Forward
                 parse_two_floats_after_name(data_view, stats_local_forward_theta, stats_local_forward_lambda);
         }
+    }
+}
+
+void Hmm::extract_probabilities(std::ifstream& file) {
+    // expecting COMPO tag
+    auto data = std::string {};
+    data = read_value_after_tag(file, "COMPO");
+
+    insert_emissions.reserve(model_length + 1);
+    match_emissions.reserve(model_length + 1);
+    transitions.reserve(model_length + 1);
+
+    // skip COMPO, next line is insert_emissions[0]
+    std::getline(file, data);
+    insert_emissions.push_back(parse_probabilities<NUM_OF_AMINO_ACIDS>(data));
+    std::getline(file, data);
+    transitions.push_back(parse_probabilities<NUM_OF_TRANSITIONS>(data));
+    // match_emissions[0] should be not filled according to the logic of HMM.
+    match_emissions.push_back(Probabilities<NUM_OF_AMINO_ACIDS>());
+
+    // parse nodes 1..model_length
+    for (size_t i = 1; i <= model_length; ++i) {
+        data = read_value_after_tag(file, std::to_string(i));
+        match_emissions.push_back(parse_probabilities<NUM_OF_AMINO_ACIDS>(data));
+        std::getline(file, data);
+        insert_emissions.push_back(parse_probabilities<NUM_OF_AMINO_ACIDS>(data));
+        std::getline(file, data);
+        transitions.push_back(parse_probabilities<NUM_OF_TRANSITIONS>(data));
     }
 }

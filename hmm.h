@@ -8,17 +8,23 @@
 // http://eddylab.org/software/hmmer/Userguide.pdf
 
 constexpr int NUM_OF_AMINO_ACIDS = 20;
+constexpr int NUM_OF_TRANSITIONS = 7;
 
-using Neg_ln_probabilities = std::vector<std::array<float, NUM_OF_AMINO_ACIDS>>;
+template <int N>
+using Probabilities = std::array<float, N>;
+
+template <int N>
+using ProbabilitiesVector = std::vector<Probabilities<N>>;
 
 class Hmm {
 public:
 
     explicit Hmm(const std::string& file_path);
 
-    Neg_ln_probabilities transition;
-    Neg_ln_probabilities emission;
-    size_t length;
+    ProbabilitiesVector<NUM_OF_AMINO_ACIDS> match_emissions;
+    ProbabilitiesVector<NUM_OF_AMINO_ACIDS> insert_emissions;
+    ProbabilitiesVector<NUM_OF_TRANSITIONS> transitions;
+    size_t model_length;
 
     // mu and lambda for Gumbel distributions
     // for MSV and Viterbi scores
@@ -35,4 +41,5 @@ public:
 private:
     void extract_length(std::ifstream& file);
     void extract_stats_local(std::ifstream& file);
+    void extract_probabilities(std::ifstream& file);
 };

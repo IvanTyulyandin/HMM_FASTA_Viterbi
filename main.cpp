@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "hmm.h"
+#include "fasta_protein_sequences.h"
 
 // code below taken from https://en.cppreference.com/w/cpp/types/numeric_limits/epsilon
 template<class T>
@@ -40,7 +41,18 @@ void test_hmm_parsing() {
     assert(almost_equal(hmm.transitions[100][6], neg_ln_to_prob(0.0)));
 }
 
+void test_fasta_parsing() {
+    auto fasta_seq = Fasta_protein_sequences("fasta_like_example.fsa");
+    assert((fasta_seq.sequences == Fasta_protein_sequences::Protein_sequences{
+           {"ACDEFGHIKLMNPQTVWY"},
+           {"ACDKLMNPQTVWYEFGHI"},
+           {"EFMNRGHIKLMNPQT"},
+           {"MKMRFFSSPCGKAAVDPADRCKEVQQIRDQHPSKIPVIIERYKGEKQLPVLDKTKFLVPDHVNMSELVKI"
+            "IRRRLQLNPTQAFFLLVNQHSMVSVSTPIADIYEQEKDEDGFLYMVYASQETFGFIRENE"}
+        }));
+}
 
 int main() {
     test_hmm_parsing();
+    test_fasta_parsing();
 }

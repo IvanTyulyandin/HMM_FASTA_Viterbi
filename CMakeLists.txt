@@ -11,3 +11,4 @@ include_directories(${HMM_FASTA_processing_SOURCE_DIR}/data_models)
 add_executable(HMM_FASTA_Viterbi main.cpp)
 
 target_link_libraries(HMM_FASTA_Viterbi data_models)
+target_link_libraries(HMM_FASTA_Viterbi data_models_test)

@@ -81,10 +81,13 @@ void Hmm::extract_stats_local(std::ifstream& file) {
         switch (data_view[0]) {
             case 'M': // MSV
                 parse_two_floats_after_name(data_view, stats_local_msv_mu, stats_local_msv_lambda);
+                break;
             case 'V': // Viterbi
                 parse_two_floats_after_name(data_view, stats_local_viterbi_mu, stats_local_viterbi_lambda);
+                break;
             case 'F': // Forward
                 parse_two_floats_after_name(data_view, stats_local_forward_theta, stats_local_forward_lambda);
+                break;
         }
     }
 }

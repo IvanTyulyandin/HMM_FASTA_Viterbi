@@ -35,8 +35,8 @@ namespace {
 
 
     template <int N>
-    Probabilities<N> parse_probabilities(std::string_view floats_view) {
-        auto res = Probabilities<N>();
+    Probabilities_array<N> parse_probabilities(std::string_view floats_view) {
+        auto res = Probabilities_array<N>();
         floats_view.remove_prefix(floats_view.find_first_not_of(' '));
 
         for (auto i = 0; i < N; ++i) {
@@ -107,7 +107,7 @@ void Hmm::extract_probabilities(std::ifstream& file) {
     std::getline(file, data);
     transitions.push_back(parse_probabilities<NUM_OF_TRANSITIONS>(data));
     // match_emissions[0] should be not filled according to the logic of HMM.
-    match_emissions.push_back(Probabilities<NUM_OF_AMINO_ACIDS>());
+    match_emissions.push_back(Probabilities_array<NUM_OF_AMINO_ACIDS>());
 
     // parse nodes 1..model_length
     for (size_t i = 1; i <= model_length; ++i) {

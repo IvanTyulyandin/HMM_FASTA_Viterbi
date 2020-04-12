@@ -11,19 +11,19 @@ constexpr int NUM_OF_AMINO_ACIDS = 20;
 constexpr int NUM_OF_TRANSITIONS = 7;
 
 template <int N>
-using Probabilities = std::array<float, N>;
+using Probabilities_array = std::array<float, N>;
 
 template <int N>
-using ProbabilitiesVector = std::vector<Probabilities<N>>;
+using Probabilities_arrays_vector = std::vector<Probabilities_array<N>>;
 
 class Hmm {
 public:
 
     explicit Hmm(const std::string& file_path);
 
-    ProbabilitiesVector<NUM_OF_AMINO_ACIDS> match_emissions;
-    ProbabilitiesVector<NUM_OF_AMINO_ACIDS> insert_emissions;
-    ProbabilitiesVector<NUM_OF_TRANSITIONS> transitions;
+    Probabilities_arrays_vector<NUM_OF_AMINO_ACIDS> match_emissions;
+    Probabilities_arrays_vector<NUM_OF_AMINO_ACIDS> insert_emissions;
+    Probabilities_arrays_vector<NUM_OF_TRANSITIONS> transitions;
     size_t model_length;
 
     // mu and lambda for Gumbel distributions

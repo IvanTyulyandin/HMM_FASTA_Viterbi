@@ -1,9 +1,9 @@
-#include "fasta_protein_sequences.h"
+#include "FASTA_protein_sequences.h"
 
 #include <fstream>
 #include <iostream>
 
-Fasta_protein_sequences::Fasta_protein_sequences(const std::string& file_path) {
+FASTA_protein_sequences::FASTA_protein_sequences(const std::string& file_path) {
     auto file = std::ifstream(file_path);
     if (file.fail()) {
         std::cout << "Failed to open " << file_path << '\n';

@@ -1,4 +1,4 @@
-#include "hmm.h"
+#include "Profile_HMM.h"
 
 #include <cmath>
 #include <fstream>
@@ -49,7 +49,7 @@ namespace {
 }
 
 
-Hmm::Hmm(const std::string& file_path) {
+Profile_HMM::Profile_HMM(const std::string& file_path) {
     auto file = std::ifstream(file_path);
     if (file.fail()) {
         std::cout << "Failed to open " << file_path << '\n';
@@ -63,13 +63,13 @@ Hmm::Hmm(const std::string& file_path) {
 }
 
 
-void Hmm::extract_length(std::ifstream& file) {
+void Profile_HMM::extract_length(std::ifstream& file) {
     // expecting LENG x
     model_length = std::stoi(read_value_after_tag(file, "LENG"));
 }
 
 
-void Hmm::extract_stats_local(std::ifstream& file) {
+void Profile_HMM::extract_stats_local(std::ifstream& file) {
     // expecting 3 lines STATS LOCAL x float float
     // where x can be MSV, VITERBI and FORWARD
     for (int i = 0; i < 3; ++i) {
@@ -92,7 +92,7 @@ void Hmm::extract_stats_local(std::ifstream& file) {
     }
 }
 
-void Hmm::extract_probabilities(std::ifstream& file) {
+void Profile_HMM::extract_probabilities(std::ifstream& file) {
     // expecting COMPO tag
     auto data = std::string {};
     data = read_value_after_tag(file, "COMPO");

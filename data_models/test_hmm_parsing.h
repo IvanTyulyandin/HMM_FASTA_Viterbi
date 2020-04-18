@@ -1,6 +1,6 @@
 #pragma once
 
-#include "hmm.h"
+#include "Profile_HMM.h"
 
 #include <cassert>
 #include <cmath>
@@ -23,7 +23,7 @@ float neg_ln_to_prob(double data) {
 }
 
 void test_hmm_parsing() {
-    auto hmm = Hmm("../100.hmm");
+    auto hmm = Profile_HMM("../100.hmm");
 
     // check header parsing
     assert(hmm.model_length == 100);

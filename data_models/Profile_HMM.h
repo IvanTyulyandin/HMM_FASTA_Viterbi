@@ -4,22 +4,25 @@
 #include <string>
 #include <vector>
 
-// info about format was taken from page 210 of
+// Partial parser of Profile HMM format.
+// Info about format was taken from page 210 of
 // http://eddylab.org/software/hmmer/Userguide.pdf
 
 constexpr int NUM_OF_AMINO_ACIDS = 20;
 constexpr int NUM_OF_TRANSITIONS = 7;
 
+using Probability = float;
+
 template <int N>
-using Probabilities_array = std::array<float, N>;
+using Probabilities_array = std::array<Probability, N>;
 
 template <int N>
 using Probabilities_arrays_vector = std::vector<Probabilities_array<N>>;
 
-class Hmm {
+class Profile_HMM {
 public:
 
-    explicit Hmm(const std::string& file_path);
+    explicit Profile_HMM(const std::string& file_path);
 
     Probabilities_arrays_vector<NUM_OF_AMINO_ACIDS> match_emissions;
     Probabilities_arrays_vector<NUM_OF_AMINO_ACIDS> insert_emissions;

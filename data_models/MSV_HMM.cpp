@@ -3,8 +3,12 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <unordered_map>
+
+constexpr float minus_infinity = -std::numeric_limits<float>::infinity();
 
 namespace {
+
     // Default background frequencies for protein models.
     // Numbers were taken from p7_AminoFrequencies hmmer function
     constexpr auto background_frequencies = std::array<float, NUM_OF_AMINO_ACIDS> {
@@ -13,6 +17,14 @@ namespace {
             0.0594422, 0.0963728, 0.0237718, 0.0414386, // K L M N
             0.0482904, 0.0395639, 0.0540978, 0.0683364, // P Q R S
             0.0540687, 0.0673417, 0.0114135, 0.0304133  // T V W Y
+    };
+
+    const auto protein_num = std::unordered_map<char, int> {
+            {'A', 0}, {'C', 1}, {'D', 2}, {'E', 3},
+            {'F', 4}, {'G', 5}, {'H', 6}, {'I', 7},
+            {'K', 8}, {'L', 9}, {'M', 10}, {'N', 11},
+            {'P', 12}, {'Q', 13}, {'R', 14}, {'S', 15},
+            {'T', 16}, {'V', 17}, {'W', 18}, {'Y', 19}
     };
 }
 
@@ -45,6 +57,12 @@ MSV_HMM::MSV_HMM(const Profile_HMM &base_hmm)
 }
 
 
+void MSV_HMM::init_transitions_depend_on_seq(const Protein_sequence &seq) {
+    tr_loop = seq.size() / static_cast<float>(seq.size() + 3);
+    tr_move =          3 / static_cast<float>(seq.size() + 3);
+}
+
+
 Log_score MSV_HMM::run_on_sequence(Protein_sequence seq) {
 
     init_transitions_depend_on_seq(seq);
@@ -71,7 +89,6 @@ Log_score MSV_HMM::run_on_sequence(Protein_sequence seq) {
     const auto B = model_length + 4;
 
     // dp matrix initialization
-    constexpr float minus_infinity = -std::numeric_limits<float>::infinity();
 
     for (auto& col : dp[0]) {
         col = minus_infinity;
@@ -86,7 +103,7 @@ Log_score MSV_HMM::run_on_sequence(Protein_sequence seq) {
     // MSV main loop
     for (size_t i = 1; i < seq.size(); ++i) {
         for (size_t j = 1; j < model_length; ++j) {
-            dp[i][j] = emission_scores[j][seq[i]] +
+            dp[i][j] = emission_scores[j][protein_num.at(seq[i])] +
                        std::max(dp[i - 1][j - 1], dp[i - 1][B] + tr_B_Mk);
             dp[i][E] = std::max(dp[i][E], dp[i][j]);
         }
@@ -100,7 +117,3 @@ Log_score MSV_HMM::run_on_sequence(Protein_sequence seq) {
 }
 
 
-void MSV_HMM::init_transitions_depend_on_seq(const Protein_sequence &seq) {
-    tr_loop = seq.size() / static_cast<float>(seq.size() + 3);
-    tr_move =          3 / static_cast<float>(seq.size() + 3);
-}

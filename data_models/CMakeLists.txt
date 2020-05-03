@@ -9,7 +9,7 @@ set(DATA_MODELS_SRC
 set(DATA_MODELS_TEST_SRC test_hmm_parsing.h test_fasta_parsing.h test_MSV.h)
 
 add_library(data_models ${DATA_MODELS_SRC})
-add_library(data_models_test ${DATA_MODELS_SRC} ${DATA_MODELS_TEST_SRC})
+add_library(data_models_test ${DATA_MODELS_TEST_SRC})
 
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/Modules)
 find_package(ComputeCpp REQUIRED)
@@ -17,6 +17,6 @@ include(FindComputeCpp)
 include_directories(${COMPUTECPP_INCLUDE_DIRECTORY})
 
 target_link_libraries(data_models ComputeCpp::ComputeCpp)
-target_link_libraries(data_models_test ComputeCpp::ComputeCpp)
-
 add_sycl_to_target(data_models MSV_HMM.cpp)
+
+target_link_libraries(data_models_test data_models)

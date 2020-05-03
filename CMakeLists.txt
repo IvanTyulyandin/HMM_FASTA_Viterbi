@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 project(HMM_FASTA_processing)
 
 set(CMAKE_CXX_STANDARD 17)
-add_compile_options(-Wall -Wextra -pedantic -Werror -Wno-unused-function)
+add_compile_options(-Wall -Wextra -pedantic -Werror -Wno-unused-function -Wno-unused-variable)
 
 add_subdirectory(data_models)
 

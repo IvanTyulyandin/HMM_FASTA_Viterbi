@@ -11,4 +11,5 @@ void test_MSV() {
     auto msv   = MSV_HMM(Profile_HMM("../100.hmm"));
     auto fasta = FASTA_protein_sequences("../fasta_like_example.fsa");
     msv.run_on_sequence(fasta.sequences.front());
+    msv.parallel_run_on_sequence(fasta.sequences.front());
 }

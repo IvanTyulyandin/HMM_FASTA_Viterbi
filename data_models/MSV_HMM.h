@@ -20,6 +20,8 @@ public:
 
     float run_on_sequence(Protein_sequence seq);
 
+    float parallel_run_on_sequence(Protein_sequence seq);
+
 private:
     size_t model_length;
     Log_scores_arrays_vector<NUM_OF_AMINO_ACIDS> emission_scores;

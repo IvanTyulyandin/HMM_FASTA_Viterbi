@@ -1,9 +1,11 @@
 #include "MSV_HMM.h"
 
+#include <CL/sycl.hpp>
 #include <algorithm>
 #include <cmath>
 #include <limits>
 #include <unordered_map>
+#include <iostream>
 
 constexpr float minus_infinity = -std::numeric_limits<float>::infinity();
 
@@ -116,4 +118,75 @@ Log_score MSV_HMM::run_on_sequence(Protein_sequence seq) {
     return dp.back()[C] + tr_move;
 }
 
+float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
+    // SYCL implementation of MSV algorithm
+    // Baseline is run_on_sequence
+    // Memory optimization -- use 2-row dp matrix instead of seq.size-row matrix
+    init_transitions_depend_on_seq(seq);
 
+    // Insert dummy "residue" in seq
+    seq = "#" + seq;
+
+    // Dynamic programming matrix,
+    // where k == model_length with dummy
+    //
+    //   M0 .. Mk-1 E J C N B
+    // 0
+    // 1
+
+    // E, J, C, N, B states indices
+    const auto E = model_length;
+    const auto J = model_length + 1;
+    const auto C = model_length + 2;
+    const auto N = model_length + 3;
+    const auto B = model_length + 4;
+    constexpr size_t rows = 2;
+    const size_t cols = model_length + 5;
+
+    namespace sycl = cl::sycl;
+    {
+        // optional parameter for queue
+        auto exception_handler = [] (const sycl::exception_list& exceptions) {
+            for (const std::exception_ptr& e : exceptions) {
+                try {
+                    std::rethrow_exception(e);
+                } catch(const sycl::exception& e) {
+                    std::cout << "Caught asynchronous SYCL exception:\n"
+                              << e.what() << '\n';
+                }
+            }
+        };
+
+        auto queue = sycl::queue(sycl::default_selector(), exception_handler);
+        auto dp = sycl::buffer<float, 2>(sycl::range<2>(rows, cols));
+
+        // dp initialization, dp[1] left as is, i.e. "trash" values
+        queue.submit([&] (sycl::handler& cgh) {
+            auto dpA = dp.get_access<sycl::access::mode::discard_write>();
+            cgh.parallel_for<class init_dp>(sycl::range<1>(cols),
+                    [=] (sycl::item<1> col_work_item) {
+                        dpA[0][col_work_item.get_linear_id()] = minus_infinity;
+                    });
+        });
+
+        queue.submit([&] (sycl::handler& cgh) {
+            auto dpA = dp.get_access<sycl::access::mode::write>();
+            cgh.single_task([=] () {
+                dpA[1][0] = minus_infinity;
+                dpA[0][N] = 0.0;
+                dpA[0][B] = tr_move; // tr_N_B
+            });
+        });
+
+        auto dpA_host = dp.get_access<sycl::access::mode::read>();
+        for (size_t i = 0; i < rows; ++i) {
+            for (size_t j = 0; j < cols; ++j) {
+                std::cout << dpA_host[i][j] << ' ';
+            }
+            std::cout << '\n';
+        }
+        queue.wait_and_throw();
+        // TODO: Main MSV loop
+    }
+    return 0;
+}

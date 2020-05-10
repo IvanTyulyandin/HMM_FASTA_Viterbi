@@ -8,13 +8,21 @@ set(DATA_MODELS_SRC
 
 set(DATA_MODELS_TEST_SRC test_hmm_parsing.h test_fasta_parsing.h test_MSV.h)
 
-add_library(data_models ${DATA_MODELS_SRC})
+function(add_library_with_sycl)
+  set(one_value_args TARGET)
+  set(multi_value_args SOURCES)
+  cmake_parse_arguments(ADD_LIBRARY
+    "${options}"
+    "${one_value_args}"
+    "${multi_value_args}"
+    ${ARGN}
+  )
+  add_library(${ADD_LIBRARY_TARGET} ${ADD_LIBRARY_SOURCES})
+  add_sycl_to_target(TARGET ${ADD_LIBRARY_TARGET}
+    SOURCES ${ADD_LIBRARY_SOURCES})
+endfunction(add_library_with_sycl)
+
+add_library_with_sycl(TARGET data_models SOURCES ${DATA_MODELS_SRC})
+
 add_library(data_models_test ${DATA_MODELS_TEST_SRC})
-
-set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/Modules)
-include(FindComputeCpp)
-include_directories(${COMPUTECPP_INCLUDE_DIRECTORY})
-
-target_link_libraries(data_models ComputeCpp::ComputeCpp)
-
 target_link_libraries(data_models_test data_models)

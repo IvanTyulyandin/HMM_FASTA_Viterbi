@@ -161,32 +161,37 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
         auto dp = sycl::buffer<float, 2>(sycl::range<2>(rows, cols));
 
         // dp initialization, dp[1] left as is, i.e. "trash" values
-        queue.submit([&] (sycl::handler& cgh) {
-            auto dpA = dp.get_access<sycl::access::mode::discard_write>();
-            cgh.parallel_for<class init_dp>(sycl::range<1>(cols),
-                    [=] (sycl::item<1> col_work_item) {
-                        dpA[0][col_work_item.get_linear_id()] = minus_infinity;
-                    });
-        });
-
-        queue.submit([&] (sycl::handler& cgh) {
-            auto dpA = dp.get_access<sycl::access::mode::write>();
-            cgh.single_task([=] () {
-                dpA[1][0] = minus_infinity;
-                dpA[0][N] = 0.0;
-                dpA[0][B] = tr_move; // tr_N_B
+        try {
+            queue.submit([&] (sycl::handler& cgh) {
+                auto dpA = dp.get_access<sycl::access::mode::discard_write>();
+                cgh.parallel_for<class init_dp>(sycl::range<1>(cols),
+                        [=] (sycl::item<1> col_work_item) {
+                            dpA[0][col_work_item.get_linear_id()] = minus_infinity;
+                        });
             });
-        });
 
-        auto dpA_host = dp.get_access<sycl::access::mode::read>();
-        for (size_t i = 0; i < rows; ++i) {
-            for (size_t j = 0; j < cols; ++j) {
-                std::cout << dpA_host[i][j] << ' ';
+            queue.submit([&] (sycl::handler& cgh) {
+                auto dpA = dp.get_access<sycl::access::mode::write>();
+                cgh.single_task([=] () {
+                    dpA[1][0] = minus_infinity;
+                    dpA[0][N] = 0.0;
+                    dpA[0][B] = tr_move; // tr_N_B
+                });
+            });
+
+            auto dpA_host = dp.get_access<sycl::access::mode::read>();
+            for (size_t i = 0; i < rows; ++i) {
+                for (size_t j = 0; j < cols; ++j) {
+                    std::cout << dpA_host[i][j] << ' ';
+                }
+                std::cout << '\n';
             }
-            std::cout << '\n';
+            queue.wait_and_throw();
+        } catch (sycl::exception& e) {
+            std::cout << e.what() << '\n';
         }
-        queue.wait_and_throw();
-        // TODO: Main MSV loop
+    // TODO: Main MSV loop
+
     }
     return 0;
 }

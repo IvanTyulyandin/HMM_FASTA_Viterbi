@@ -118,6 +118,10 @@ Log_score MSV_HMM::run_on_sequence(Protein_sequence seq) {
     return dp.back()[C] + tr_move;
 }
 
+// SYCL kernel names
+class init_dp;
+class init_N_B;
+
 float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
     // SYCL implementation of MSV algorithm
     // Baseline is run_on_sequence
@@ -143,6 +147,9 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
     constexpr size_t rows = 2;
     const size_t cols = model_length + 5;
 
+    // Cannot capture 'this' in a SYCL kernel, introducing copy
+    auto kernel_tr_move = tr_move;
+
     namespace sycl = cl::sycl;
     {
         // optional parameter for queue
@@ -163,19 +170,19 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
         // dp initialization, dp[1] left as is, i.e. "trash" values
         try {
             queue.submit([&] (sycl::handler& cgh) {
-                auto dpA = dp.get_access<sycl::access::mode::discard_write>();
-                cgh.parallel_for<class init_dp>(sycl::range<1>(cols),
+                auto dpA = dp.get_access<sycl::access::mode::discard_write, sycl::access::target::global_buffer>(cgh);
+                cgh.parallel_for<init_dp>(sycl::range<1>(cols),
                         [=] (sycl::item<1> col_work_item) {
                             dpA[0][col_work_item.get_linear_id()] = minus_infinity;
                         });
             });
 
             queue.submit([&] (sycl::handler& cgh) {
-                auto dpA = dp.get_access<sycl::access::mode::write>();
-                cgh.single_task([=] () {
+                auto dpA = dp.get_access<sycl::access::mode::write, sycl::access::target::global_buffer>(cgh);
+                cgh.single_task<init_N_B>([=] () {
                     dpA[1][0] = minus_infinity;
                     dpA[0][N] = 0.0;
-                    dpA[0][B] = tr_move; // tr_N_B
+                    dpA[0][B] = kernel_tr_move; // tr_N_B
                 });
             });
 

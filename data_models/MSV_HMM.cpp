@@ -118,14 +118,17 @@ Log_score MSV_HMM::run_on_sequence(Protein_sequence seq) {
     return dp.back()[C] + tr_move;
 }
 
+
+// SYCL implementation of MSV algorithm
+// Baseline is run_on_sequence
+// Memory optimization -- use 2-row dp matrix instead of seq.size-row matrix
+
 // SYCL kernel names
 class init_dp;
 class init_N_B;
+class M_states_handler;
 
 float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
-    // SYCL implementation of MSV algorithm
-    // Baseline is run_on_sequence
-    // Memory optimization -- use 2-row dp matrix instead of seq.size-row matrix
     init_transitions_depend_on_seq(seq);
 
     // Insert dummy "residue" in seq
@@ -147,11 +150,14 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
     constexpr size_t rows = 2;
     const size_t cols = model_length + 5;
 
-    // Cannot capture 'this' in a SYCL kernel, introducing copy
-    auto kernel_tr_move = tr_move;
 
     namespace sycl = cl::sycl;
     {
+        // Cannot capture 'this' in a SYCL kernel, introducing copy
+        const auto move_score = tr_move;
+        const auto B_Mk_score = tr_B_Mk;
+        const auto num_of_M_states = model_length - 1;    // count without dummy M0
+
         // optional parameter for queue
         auto exception_handler = [] (const sycl::exception_list& exceptions) {
             for (const std::exception_ptr& e : exceptions) {
@@ -164,8 +170,11 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
             }
         };
 
-        auto queue = sycl::queue(sycl::default_selector(), exception_handler);
-        auto dp = sycl::buffer<float, 2>(sycl::range<2>(rows, cols));
+        auto queue         = sycl::queue(sycl::default_selector(), exception_handler);
+        auto dp            = sycl::buffer<float, 2>(sycl::range<2>(rows, cols));
+        auto emissions_buf = sycl::buffer<float, 2>(emission_scores.data()->data(),
+                sycl::range<2>(emission_scores.size(), NUM_OF_AMINO_ACIDS),
+                sycl::property::buffer::use_host_ptr());
 
         // dp initialization, dp[1] left as is, i.e. "trash" values
         try {
@@ -182,9 +191,29 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
                 cgh.single_task<init_N_B>([=] () {
                     dpA[1][0] = minus_infinity;
                     dpA[0][N] = 0.0;
-                    dpA[0][B] = kernel_tr_move; // tr_N_B
+                    dpA[0][B] = move_score; // tr_N_B
                 });
             });
+
+            size_t cur_row = 1;
+            size_t prev_row = 0;
+
+            for (size_t i = 1; i < seq.size(); ++i) {
+                auto protein_index = protein_num.at(seq[i]);
+                queue.submit([&] (sycl::handler& cgh) {
+                    auto dpA = dp.get_access<sycl::access::mode::write, sycl::access::target::global_buffer>(cgh);
+                    auto emissions_bufA = emissions_buf.get_access<sycl::access::mode::read, sycl::access::target::constant_buffer>(cgh);
+
+                    cgh.parallel_for<M_states_handler>(sycl::range<1>(num_of_M_states),
+                        [=] (sycl::item<1> col_work_item) {
+                            auto cur_col = col_work_item.get_linear_id() + 1;
+                            dpA[cur_row][cur_col] = emissions_bufA[cur_col][protein_index]
+                                + cl::sycl::fmax(dpA[prev_row][cur_col - 1], dpA[prev_row][B] + B_Mk_score);
+                        });
+                });
+                prev_row = cur_row;
+                cur_row = 1 - cur_row;
+            }
 
             auto dpA_host = dp.get_access<sycl::access::mode::read>();
             for (size_t i = 0; i < rows; ++i) {
@@ -197,8 +226,6 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
         } catch (sycl::exception& e) {
             std::cout << e.what() << '\n';
         }
-    // TODO: Main MSV loop
-
     }
     return 0;
 }

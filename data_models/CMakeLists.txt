@@ -10,7 +10,7 @@ set(DATA_MODELS_TEST_SRC test_hmm_parsing.hpp test_fasta_parsing.hpp test_MSV.hp
 
 function(add_library_with_sycl)
   set(one_value_args TARGET)
-  set(multi_value_args SOURCES)
+  set(multi_value_args SOURCES SYCL_SOURCES)
   cmake_parse_arguments(ADD_LIBRARY
     "${options}"
     "${one_value_args}"
@@ -19,10 +19,10 @@ function(add_library_with_sycl)
   )
   add_library(${ADD_LIBRARY_TARGET} ${ADD_LIBRARY_SOURCES})
   add_sycl_to_target(TARGET ${ADD_LIBRARY_TARGET}
-    SOURCES ${ADD_LIBRARY_SOURCES})
+    SOURCES ${ADD_LIBRARY_SYCL_SOURCES})
 endfunction(add_library_with_sycl)
 
-add_library_with_sycl(TARGET data_models SOURCES ${DATA_MODELS_SRC})
+add_library_with_sycl(TARGET data_models SOURCES ${DATA_MODELS_SRC} SYCL_SOURCES MSV_HMM.cpp)
 
 add_library(data_models_test ${DATA_MODELS_TEST_SRC})
 target_link_libraries(data_models_test data_models)

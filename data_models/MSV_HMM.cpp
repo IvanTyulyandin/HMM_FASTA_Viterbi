@@ -1,4 +1,4 @@
-#include "MSV_HMM.h"
+#include "MSV_HMM.hpp"
 
 #include <CL/sycl.hpp>
 #include <algorithm>

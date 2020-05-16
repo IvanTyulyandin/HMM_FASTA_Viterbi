@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Profile_HMM.h"
+#include "Profile_HMM.hpp"
 
 #include <cassert>
 #include <cmath>

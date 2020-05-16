@@ -1,6 +1,6 @@
-#include "test_hmm_parsing.h"
-#include "test_fasta_parsing.h"
-#include "test_MSV.h"
+#include "test_hmm_parsing.hpp"
+#include "test_fasta_parsing.hpp"
+#include "test_MSV.hpp"
 
 int main() {
 #ifndef NDEBUG

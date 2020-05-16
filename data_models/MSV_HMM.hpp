@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Profile_HMM.h"
-#include "FASTA_protein_sequences.h"
+#include "Profile_HMM.hpp"
+#include "FASTA_protein_sequences.hpp"
 
 // Sequential MSV implementation
 // https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3197634/

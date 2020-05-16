@@ -1,7 +1,7 @@
 #pragma once
 
-#include "MSV_HMM.h"
-#include "FASTA_protein_sequences.h"
+#include "MSV_HMM.hpp"
+#include "FASTA_protein_sequences.hpp"
 
 #include <cassert>
 

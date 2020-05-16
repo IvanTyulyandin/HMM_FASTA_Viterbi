@@ -1,4 +1,4 @@
-#include "FASTA_protein_sequences.h"
+#include "FASTA_protein_sequences.hpp"
 
 #include <fstream>
 #include <iostream>

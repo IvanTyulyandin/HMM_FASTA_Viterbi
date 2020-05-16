@@ -1,4 +1,4 @@
-#include "Profile_HMM.h"
+#include "Profile_HMM.hpp"
 
 #include <cmath>
 #include <fstream>

@@ -2,11 +2,11 @@ cmake_minimum_required(VERSION 3.15)
 project(data_models)
 
 set(DATA_MODELS_SRC
-        Profile_HMM.h Profile_HMM.cpp
-        FASTA_protein_sequences.h FASTA_protein_sequences.cpp
-        MSV_HMM.h MSV_HMM.cpp)
+        Profile_HMM.hpp Profile_HMM.cpp
+        FASTA_protein_sequences.hpp FASTA_protein_sequences.cpp
+        MSV_HMM.hpp MSV_HMM.cpp)
 
-set(DATA_MODELS_TEST_SRC test_hmm_parsing.h test_fasta_parsing.h test_MSV.h)
+set(DATA_MODELS_TEST_SRC test_hmm_parsing.hpp test_fasta_parsing.hpp test_MSV.hpp)
 
 function(add_library_with_sycl)
   set(one_value_args TARGET)

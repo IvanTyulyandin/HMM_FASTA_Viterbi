@@ -5,22 +5,18 @@
 #include <cassert>
 #include <cmath>
 
-// code below taken from https://en.cppreference.com/w/cpp/types/numeric_limits/epsilon
-template<class T>
-typename std::enable_if<!std::numeric_limits<T>::is_integer, bool>::type
-almost_equal(T x, T y, int ulp = 5)
-{
+// code below taken from
+// https://en.cppreference.com/w/cpp/types/numeric_limits/epsilon
+template <class T>
+typename std::enable_if<!std::numeric_limits<T>::is_integer, bool>::type almost_equal(T x, T y, int ulp = 5) {
     // the machine epsilon has to be scaled to the magnitude of the values used
     // and multiplied by the desired precision in ULPs (units in the last place)
-    return std::fabs(x-y) <= std::numeric_limits<T>::epsilon() * std::fabs(x+y) * ulp
+    return std::fabs(x - y) <= std::numeric_limits<T>::epsilon() * std::fabs(x + y) * ulp
            // unless the result is subnormal
-           || std::fabs(x-y) < std::numeric_limits<T>::min();
+           || std::fabs(x - y) < std::numeric_limits<T>::min();
 }
 
-
-float neg_ln_to_prob(double data) {
-    return std::exp(-1 * static_cast<float>(data));
-}
+float neg_ln_to_prob(double data) { return std::exp(-1 * static_cast<float>(data)); }
 
 void test_hmm_parsing() {
     auto hmm = Profile_HMM("../100.hmm");

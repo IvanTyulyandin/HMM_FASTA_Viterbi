@@ -1,28 +1,26 @@
 #pragma once
 
-#include "Profile_HMM.hpp"
 #include "FASTA_protein_sequences.hpp"
+#include "Profile_HMM.hpp"
 
 // Sequential MSV implementation
 // https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3197634/
 
 using Log_score = float;
 
-template<int N>
-using Log_scores_array = std::array<Log_score, N>;
+template <int N> using Log_scores_array = std::array<Log_score, N>;
 
-template<int N>
-using Log_scores_arrays_vector = std::vector<Log_scores_array<N>>;
+template <int N> using Log_scores_arrays_vector = std::vector<Log_scores_array<N>>;
 
 class MSV_HMM {
-public:
+  public:
     explicit MSV_HMM(const Profile_HMM& base_hmm);
 
     float run_on_sequence(Protein_sequence seq);
 
     float parallel_run_on_sequence(Protein_sequence seq);
 
-private:
+  private:
     size_t model_length;
     Log_scores_arrays_vector<NUM_OF_AMINO_ACIDS> emission_scores;
 

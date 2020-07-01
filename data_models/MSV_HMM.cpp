@@ -153,6 +153,8 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
 
 
     namespace sycl = cl::sycl;
+    using target = sycl::access::target;
+    using mode = sycl::access::mode;
     {
         // Cannot capture 'this' in a SYCL kernel, introducing copy
         const auto move_score = tr_move;
@@ -181,7 +183,7 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
         // dp initialization, dp[1] left as is, i.e. "trash" values
         try {
             queue.submit([&] (sycl::handler& cgh) {
-                auto dpA = dp.get_access<sycl::access::mode::discard_write, sycl::access::target::global_buffer>(cgh);
+                auto dpA = dp.get_access<mode::discard_write, target::global_buffer>(cgh);
                 cgh.parallel_for<init_dp>(sycl::range<1>(cols),
                         [=] (sycl::item<1> col_work_item) {
                             dpA[0][col_work_item.get_linear_id()] = minus_infinity;
@@ -189,7 +191,7 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
             });
 
             queue.submit([&] (sycl::handler& cgh) {
-                auto dpA = dp.get_access<sycl::access::mode::write, sycl::access::target::global_buffer>(cgh);
+                auto dpA = dp.get_access<mode::write, target::global_buffer>(cgh);
                 cgh.single_task<init_N_B>([=] () {
                     dpA[1][0] = minus_infinity;
                     dpA[0][N] = 0.0;
@@ -203,8 +205,8 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
             for (size_t i = 1; i < seq.size(); ++i) {
                 auto protein_index = protein_num.at(seq[i]);
                 queue.submit([&] (sycl::handler& cgh) {
-                    auto dpA = dp.get_access<sycl::access::mode::write, sycl::access::target::global_buffer>(cgh);
-                    auto emissions_bufA = emissions_buf.get_access<sycl::access::mode::read, sycl::access::target::constant_buffer>(cgh);
+                    auto dpA = dp.get_access<mode::write, target::global_buffer>(cgh);
+                    auto emissions_bufA = emissions_buf.get_access<mode::read, target::constant_buffer>(cgh);
 
                     cgh.parallel_for<M_states_handler>(sycl::range<1>(num_of_M_states),
                         [=] (sycl::item<1> col_work_item) {
@@ -215,8 +217,8 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
                 });
 
                 queue.submit([&] (sycl::handler& cgh) {
-                    auto dpA = dp.get_access<sycl::access::mode::read, sycl::access::target::global_buffer>(cgh);
-                    auto bufA = buf_max_from_M.get_access<sycl::access::mode::write, sycl::access::target::global_buffer>(cgh);
+                    auto dpA = dp.get_access<mode::read, target::global_buffer>(cgh);
+                    auto bufA = buf_max_from_M.get_access<mode::write, target::global_buffer>(cgh);
 
                     cgh.parallel_for<copy_M>(sycl::range<1>(num_of_M_states),
                         [=] (sycl::item<1> col_work_item) {
@@ -228,7 +230,7 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
                 cur_row = 1 - cur_row;
             }
 
-            auto dpA_host = dp.get_access<sycl::access::mode::read>();
+            auto dpA_host = dp.get_access<mode::read>();
             for (size_t i = 0; i < rows; ++i) {
                 for (size_t j = 0; j < cols; ++j) {
                     std::cout << dpA_host[i][j] << ' ';

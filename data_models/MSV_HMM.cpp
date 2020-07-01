@@ -127,6 +127,7 @@ Log_score MSV_HMM::run_on_sequence(Protein_sequence seq) {
 class init_dp;
 class init_N_B;
 class M_states_handler;
+class copy_M;
 
 float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
     init_transitions_depend_on_seq(seq);
@@ -170,9 +171,10 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
             }
         };
 
-        auto queue         = sycl::queue(sycl::default_selector(), exception_handler);
-        auto dp            = sycl::buffer<float, 2>(sycl::range<2>(rows, cols));
-        auto emissions_buf = sycl::buffer<float, 2>(emission_scores.data()->data(),
+        auto queue          = sycl::queue(sycl::default_selector(), exception_handler);
+        auto dp             = sycl::buffer<float, 2>(sycl::range<2>(rows, cols));
+        auto buf_max_from_M = sycl::buffer<float, 1>(sycl::range<1>(num_of_M_states));
+        auto emissions_buf  = sycl::buffer<float, 2>(emission_scores.data()->data(),
                 sycl::range<2>(emission_scores.size(), NUM_OF_AMINO_ACIDS),
                 sycl::property::buffer::use_host_ptr());
 
@@ -211,6 +213,17 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
                                 + cl::sycl::fmax(dpA[prev_row][cur_col - 1], dpA[prev_row][B] + B_Mk_score);
                         });
                 });
+
+                queue.submit([&] (sycl::handler& cgh) {
+                    auto dpA = dp.get_access<sycl::access::mode::read, sycl::access::target::global_buffer>(cgh);
+                    auto bufA = buf_max_from_M.get_access<sycl::access::mode::write, sycl::access::target::global_buffer>(cgh);
+
+                    cgh.parallel_for<copy_M>(sycl::range<1>(num_of_M_states),
+                        [=] (sycl::item<1> col_work_item) {
+                            bufA[col_work_item.get_linear_id()] = dpA[cur_row][col_work_item.get_linear_id()];
+                        });
+                });
+
                 prev_row = cur_row;
                 cur_row = 1 - cur_row;
             }

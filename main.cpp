@@ -1,11 +1,3 @@
-#include "test_MSV.hpp"
-#include "test_fasta_parsing.hpp"
-#include "test_hmm_parsing.hpp"
+#include <iostream>
 
-int main() {
-#ifndef NDEBUG
-    test_hmm_parsing();
-    test_fasta_parsing();
-    test_MSV();
-#endif
-}
+int main() { std::cout << "Work in progress, you can try run tests with ctest.\n"; }

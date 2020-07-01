@@ -6,8 +6,6 @@ set(DATA_MODELS_SRC
         FASTA_protein_sequences.hpp FASTA_protein_sequences.cpp
         MSV_HMM.hpp MSV_HMM.cpp)
 
-set(DATA_MODELS_TEST_SRC test_hmm_parsing.hpp test_fasta_parsing.hpp test_MSV.hpp)
-
 function(add_library_with_sycl)
   set(one_value_args TARGET)
   set(multi_value_args SOURCES SYCL_SOURCES)
@@ -24,5 +22,15 @@ endfunction(add_library_with_sycl)
 
 add_library_with_sycl(TARGET data_models SOURCES ${DATA_MODELS_SRC} SYCL_SOURCES MSV_HMM.cpp)
 
-add_library(data_models_test ${DATA_MODELS_TEST_SRC})
-target_link_libraries(data_models_test data_models)
+add_executable(test_hmm_parsing test_hmm_parsing.cpp ${DATA_MODELS_SRC})
+target_link_libraries(test_hmm_parsing data_models)
+
+add_executable(test_fasta_parsing test_fasta_parsing.cpp ${DATA_MODELS_SRC})
+target_link_libraries(test_fasta_parsing data_models)
+
+add_executable(test_MSV test_MSV.cpp ${DATA_MODELS_SRC})
+target_link_libraries(test_MSV data_models)
+
+add_test(hmm_parsing_test test_hmm_parsing)
+add_test(fasta_parsing_test test_fasta_parsing)
+add_test(MSV_test test_MSV)

@@ -1,11 +1,9 @@
-#pragma once
-
 #include "FASTA_protein_sequences.hpp"
 #include "MSV_HMM.hpp"
 
 #include <cassert>
 
-void test_MSV() {
+int main() {
     // Test for out-of-bound access.
     // If didn't fail with an exception or segfault, the test is passed
     auto msv = MSV_HMM(Profile_HMM("../100.hmm"));

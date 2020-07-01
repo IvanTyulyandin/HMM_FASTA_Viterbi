@@ -1,5 +1,3 @@
-#pragma once
-
 #include "Profile_HMM.hpp"
 
 #include <cassert>
@@ -18,7 +16,7 @@ typename std::enable_if<!std::numeric_limits<T>::is_integer, bool>::type almost_
 
 float neg_ln_to_prob(double data) { return std::exp(-1 * static_cast<float>(data)); }
 
-void test_hmm_parsing() {
+int main() {
     auto hmm = Profile_HMM("../100.hmm");
 
     // check header parsing

@@ -147,7 +147,7 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
         // Cannot capture 'this' in a SYCL kernel, introducing copy
         const auto move_score = tr_move;
         const auto B_Mk_score = tr_B_Mk;
-        const auto num_of_M_states = model_length - 1; // count without dummy M0
+        const auto num_of_real_M_states = model_length - 1; // count without dummy M0
 
         // optional parameter for queue
         auto exception_handler = [](const sycl::exception_list& exceptions) {
@@ -162,10 +162,14 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
 
         auto queue = sycl::queue(sycl::default_selector(), exception_handler);
         auto dp = sycl::buffer<float, 2>(sycl::range<2>(rows, cols));
-        auto buf_max_from_M = sycl::buffer<float, 1>(sycl::range<1>(num_of_M_states));
         auto emissions_buf = sycl::buffer<float, 2>(emission_scores.data()->data(),
                                                     sycl::range<2>(emission_scores.size(), NUM_OF_AMINO_ACIDS),
                                                     sycl::property::buffer::use_host_ptr());
+
+        // The algorithm that finds maximum requires data size to be even
+        // M[0] is always minus_infinity, it does not affect the maximum of M states
+        auto should_use_M0 = static_cast<int>(num_of_real_M_states % 2 != 0);
+        auto buf_max_from_M = sycl::buffer<float, 1>(sycl::range<1>(num_of_real_M_states + should_use_M0));
 
         // dp initialization, dp[1] left as is, i.e. "trash" values
         try {
@@ -190,12 +194,14 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
 
             for (size_t i = 1; i < seq.size(); ++i) {
                 auto protein_index = protein_num.at(seq[i]);
+
+                // Calculate M states
                 queue.submit([&](sycl::handler& cgh) {
                     auto dpA = dp.get_access<mode::write, target::global_buffer>(cgh);
                     auto emissions_bufA = emissions_buf.get_access<mode::read, target::constant_buffer>(cgh);
 
                     cgh.parallel_for<M_states_handler>(
-                        sycl::range<1>(num_of_M_states), [=](sycl::item<1> col_work_item) {
+                        sycl::range<1>(num_of_real_M_states), [=](sycl::item<1> col_work_item) {
                             auto cur_col = col_work_item.get_linear_id() + 1;
                             dpA[cur_row][cur_col] =
                                 emissions_bufA[cur_col][protein_index] +
@@ -203,13 +209,16 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
                         });
                 });
 
+                // Data preparation to get max from M states
                 queue.submit([&](sycl::handler& cgh) {
                     auto dpA = dp.get_access<mode::read, target::global_buffer>(cgh);
                     auto bufA = buf_max_from_M.get_access<mode::write, target::global_buffer>(cgh);
 
-                    cgh.parallel_for<copy_M>(sycl::range<1>(num_of_M_states), [=](sycl::item<1> col_work_item) {
-                        bufA[col_work_item.get_linear_id()] = dpA[cur_row][col_work_item.get_linear_id()];
-                    });
+                    cgh.parallel_for<copy_M>(sycl::range<1>(buf_max_from_M.get_size()),
+                                             [=](sycl::item<1> col_work_item) {
+                                                 auto id = col_work_item.get_linear_id();
+                                                 bufA[id] = dpA[cur_row][id + (1 - should_use_M0)];
+                                             });
                 });
 
                 prev_row = cur_row;

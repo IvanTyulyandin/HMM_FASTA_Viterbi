@@ -117,6 +117,8 @@ class init_dp;
 class init_N_B;
 class M_states_handler;
 class copy_M;
+class reduction_step;
+class E_J_C_N_B_states_handler;
 
 float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
     init_transitions_depend_on_seq(seq);
@@ -147,6 +149,9 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
         // Cannot capture 'this' in a SYCL kernel, introducing copy
         const auto move_score = tr_move;
         const auto B_Mk_score = tr_B_Mk;
+        const auto E_J_score = tr_E_J;
+        const auto E_C_score = tr_E_C;
+        const auto loop_score = tr_loop;
         const auto num_of_real_M_states = model_length - 1; // count without dummy M0
 
         // optional parameter for queue
@@ -169,7 +174,8 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
         // The algorithm that finds maximum requires data size to be even
         // M[0] is always minus_infinity, it does not affect the maximum of M states
         auto should_use_M0 = static_cast<int>(num_of_real_M_states % 2 != 0);
-        auto buf_max_from_M = sycl::buffer<float, 1>(sycl::range<1>(num_of_real_M_states + should_use_M0));
+        auto max_M_buf = sycl::buffer<float, 1>(sycl::range<1>(num_of_real_M_states + should_use_M0));
+        auto max_M_buf_size = max_M_buf.get_count();
 
         // dp initialization, dp[1] left as is, i.e. "trash" values
         try {
@@ -212,13 +218,46 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
                 // Data preparation to get max from M states
                 queue.submit([&](sycl::handler& cgh) {
                     auto dpA = dp.get_access<mode::read, target::global_buffer>(cgh);
-                    auto bufA = buf_max_from_M.get_access<mode::write, target::global_buffer>(cgh);
+                    auto bufA = max_M_buf.get_access<mode::discard_write, target::global_buffer>(cgh);
 
-                    cgh.parallel_for<copy_M>(sycl::range<1>(buf_max_from_M.get_size()),
-                                             [=](sycl::item<1> col_work_item) {
-                                                 auto id = col_work_item.get_linear_id();
-                                                 bufA[id] = dpA[cur_row][id + (1 - should_use_M0)];
-                                             });
+                    cgh.parallel_for<copy_M>(sycl::range<1>(max_M_buf_size), [=](sycl::item<1> col_work_item) {
+                        auto id = col_work_item.get_linear_id();
+                        bufA[id] = dpA[cur_row][id + 1 - should_use_M0];
+                    });
+                });
+
+                // Find max from M states, max_M_buf size is even
+                // Can it be improved with local memory usage?
+                auto cur_data_size = max_M_buf_size / 2;
+                auto stride = 1;
+
+                do {
+                    queue.submit([&](sycl::handler& cgh) {
+                        auto bufA = max_M_buf.get_access<mode::read_write, target::global_buffer>(cgh);
+
+                        cgh.parallel_for<reduction_step>(sycl::range<1>(cur_data_size), [=](sycl::item<1> item) {
+                            auto id = item.get_linear_id() * stride * 2;
+                            auto offset = id + stride;
+                            if (offset < max_M_buf_size) {
+                                bufA[id] = sycl::fmax(bufA[id], bufA[offset]);
+                            }
+                        });
+                    });
+                    stride *= 2;
+                    cur_data_size += (cur_data_size % 2);
+                    cur_data_size /= 2;
+                } while (cur_data_size > 1);
+
+                queue.submit([&](sycl::handler& cgh) {
+                    auto dpA = dp.get_access<mode::read_write, target::global_buffer>(cgh);
+                    auto bufA = max_M_buf.get_access<mode::read, target::global_buffer>(cgh);
+                    cgh.single_task<E_J_C_N_B_states_handler>([=]() {
+                        dpA[cur_row][E] = bufA[0];
+                        dpA[cur_row][J] = sycl::max(dpA[prev_row][J] + loop_score, dpA[cur_row][E] + E_J_score);
+                        dpA[cur_row][C] = sycl::max(dpA[prev_row][C] + loop_score, dpA[cur_row][E] + E_C_score);
+                        dpA[cur_row][N] = dpA[prev_row][N] + loop_score;
+                        dpA[cur_row][B] = sycl::max(dpA[cur_row][N] + move_score, dpA[cur_row][J] + move_score);
+                    });
                 });
 
                 prev_row = cur_row;
@@ -226,13 +265,7 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
             }
 
             auto dpA_host = dp.get_access<mode::read>();
-            for (size_t i = 0; i < rows; ++i) {
-                for (size_t j = 0; j < cols; ++j) {
-                    std::cout << dpA_host[i][j] << ' ';
-                }
-                std::cout << '\n';
-            }
-            queue.wait_and_throw();
+            return dpA_host[prev_row][C] + move_score;
         } catch (sycl::exception& e) {
             std::cout << e.what() << '\n';
         }

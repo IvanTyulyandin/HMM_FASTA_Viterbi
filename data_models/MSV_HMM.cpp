@@ -72,7 +72,7 @@ Log_score MSV_HMM::run_on_sequence(Protein_sequence seq) {
     // seq1
     // ..
     // seqL-1
-    auto dp = std::vector<std::vector<Log_score>>(seq.length(), std::vector(model_length + 5, 0.0f));
+    auto dp = std::vector<std::vector<Log_score>>(seq.length(), std::vector(model_length + 5, minus_infinity));
 
     // E, J, C, N, B states indices
     const auto E = model_length;
@@ -82,16 +82,8 @@ Log_score MSV_HMM::run_on_sequence(Protein_sequence seq) {
     const auto B = model_length + 4;
 
     // dp matrix initialization
-
-    for (auto& col : dp[0]) {
-        col = minus_infinity;
-    }
     dp[0][N] = 0.0;
     dp[0][B] = tr_move; // tr_N_B
-
-    for (auto& row : dp) {
-        row[0] = minus_infinity;
-    }
 
     // MSV main loop
     for (size_t i = 1; i < seq.size(); ++i) {

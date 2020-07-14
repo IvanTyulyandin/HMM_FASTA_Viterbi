@@ -53,8 +53,8 @@ MSV_HMM::MSV_HMM(const Profile_HMM& base_hmm) : model_length(base_hmm.model_leng
 }
 
 void MSV_HMM::init_transitions_depend_on_seq(const Protein_sequence& seq) {
-    tr_loop = seq.size() / static_cast<float>(seq.size() + 3);
-    tr_move = 3 / static_cast<float>(seq.size() + 3);
+    tr_loop = std::log2(seq.size() / static_cast<float>(seq.size() + 3));
+    tr_move = std::log2(3 / static_cast<float>(seq.size() + 3));
 }
 
 Log_score MSV_HMM::run_on_sequence(Protein_sequence seq) {

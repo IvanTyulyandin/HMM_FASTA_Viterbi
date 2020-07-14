@@ -4,7 +4,7 @@
 #include <cassert>
 #include <cmath>
 
-// code below taken from
+// code below was taken from
 // https://en.cppreference.com/w/cpp/types/numeric_limits/epsilon
 template <class T>
 typename std::enable_if<!std::numeric_limits<T>::is_integer, bool>::type almost_equal(T x, T y, int ulp = 5) {

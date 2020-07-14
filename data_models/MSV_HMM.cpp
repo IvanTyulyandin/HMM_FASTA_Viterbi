@@ -21,7 +21,7 @@ constexpr auto background_frequencies = std::array<float, NUM_OF_AMINO_ACIDS>{
     0.0540687, 0.0673417, 0.0114135, 0.0304133  // T V W Y
 };
 
-const auto protein_num = std::unordered_map<char, int>{
+const auto amino_acid_num = std::unordered_map<char, int>{
     {'A', 0},  {'C', 1},  {'D', 2},  {'E', 3},  {'F', 4},  {'G', 5},  {'H', 6},  {'I', 7},  {'K', 8},  {'L', 9},
     {'M', 10}, {'N', 11}, {'P', 12}, {'Q', 13}, {'R', 14}, {'S', 15}, {'T', 16}, {'V', 17}, {'W', 18}, {'Y', 19}};
 } // namespace
@@ -87,8 +87,9 @@ Log_score MSV_HMM::run_on_sequence(Protein_sequence seq) {
 
     // MSV main loop
     for (size_t i = 1; i < seq.size(); ++i) {
+        const auto amino_acid_index = amino_acid_num.at(seq[i]);
         for (size_t j = 1; j < model_length; ++j) {
-            dp[i][j] = emission_scores[j][protein_num.at(seq[i])] + std::max(dp[i - 1][j - 1], dp[i - 1][B] + tr_B_Mk);
+            dp[i][j] = emission_scores[j][amino_acid_index] + std::max(dp[i - 1][j - 1], dp[i - 1][B] + tr_B_Mk);
             dp[i][E] = std::max(dp[i][E], dp[i][j]);
         }
 
@@ -112,7 +113,7 @@ class copy_M;
 class reduction_step;
 class E_J_C_N_B_states_handler;
 
-float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
+Log_score MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
     init_transitions_depend_on_seq(seq);
 
     // Insert dummy "residue" in seq
@@ -165,9 +166,9 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
 
         // The algorithm that finds maximum requires data size to be even
         // M[0] is always minus_infinity, it does not affect the maximum of M states
-        auto should_use_M0 = static_cast<int>(num_of_real_M_states % 2 != 0);
+        const auto should_use_M0 = static_cast<int>(num_of_real_M_states % 2 != 0);
         auto max_M_buf = sycl::buffer<float, 1>(sycl::range<1>(num_of_real_M_states + should_use_M0));
-        auto max_M_buf_size = max_M_buf.get_count();
+        const auto max_M_buf_size = max_M_buf.get_count();
 
         // dp initialization, dp[1] left as is, i.e. "trash" values
         try {
@@ -191,7 +192,7 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
             size_t prev_row = 0;
 
             for (size_t i = 1; i < seq.size(); ++i) {
-                auto protein_index = protein_num.at(seq[i]);
+                const auto amino_acid_index = amino_acid_num.at(seq[i]);
 
                 // Calculate M states
                 queue.submit([&](sycl::handler& cgh) {
@@ -202,8 +203,8 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
                         sycl::range<1>(num_of_real_M_states), [=](sycl::item<1> col_work_item) {
                             auto cur_col = col_work_item.get_linear_id() + 1;
                             dpA[cur_row][cur_col] =
-                                emissions_bufA[cur_col][protein_index] +
-                                cl::sycl::fmax(dpA[prev_row][cur_col - 1], dpA[prev_row][B] + B_Mk_score);
+                                emissions_bufA[cur_col][amino_acid_index] +
+                                sycl::fmax(dpA[prev_row][cur_col - 1], dpA[prev_row][B] + B_Mk_score);
                         });
                 });
 
@@ -237,26 +238,6 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
                     left_half_size += (left_half_size % 2);
                     left_half_size /= 2;
                 }
-
-                //                {
-                //                    auto bufA_host = max_M_buf.get_access<mode::read>();
-                //                    auto expected_max = sycl::fmax(bufA_host[0], bufA_host[1]);
-                //                    auto real_max = sycl::fmax(bufA_host[0], bufA_host[1]);
-                //                    auto ind = 0;
-                //                    for (size_t c = 2; c < max_M_buf_size; ++c) {
-                //                        if (real_max < bufA_host[c]) {
-                //                            real_max = bufA_host[c];
-                //                            ind = c;
-                //                        }
-                //                    }
-                //                    if (expected_max != real_max) {
-                //                        std::cout << expected_max << " vs " << real_max << '\n';
-                //                        std::cout << ind << '\n';
-                //                        return 0;
-                //                    } else {
-                //                        std::cout << "Wrong reduction algorithm\n";
-                //                    }
-                //                }
 
                 queue.submit([&](sycl::handler& cgh) {
                     auto dpA = dp.get_access<mode::read_write, target::global_buffer>(cgh);

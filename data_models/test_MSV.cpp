@@ -2,12 +2,25 @@
 #include "MSV_HMM.hpp"
 
 #include <cassert>
+#include <cmath>
+
+// code below taken from
+// https://en.cppreference.com/w/cpp/types/numeric_limits/epsilon
+template <class T>
+typename std::enable_if<!std::numeric_limits<T>::is_integer, bool>::type almost_equal(T x, T y, int ulp = 5) {
+    // the machine epsilon has to be scaled to the magnitude of the values used
+    // and multiplied by the desired precision in ULPs (units in the last place)
+    return std::fabs(x - y) <= std::numeric_limits<T>::epsilon() * std::fabs(x + y) * ulp
+           // unless the result is subnormal
+           || std::fabs(x - y) < std::numeric_limits<T>::min();
+}
 
 int main() {
-    // Test for out-of-bound access.
-    // If didn't fail with an exception or segfault, the test is passed
+    // Test MSV checking invariant for sequential and parallel MSV implementations
     auto msv = MSV_HMM(Profile_HMM("../100.hmm"));
     auto fasta = FASTA_protein_sequences("../fasta_like_example.fsa");
-    msv.run_on_sequence(fasta.sequences.front());
-    msv.parallel_run_on_sequence(fasta.sequences.front());
+    for (const auto& protein : fasta.sequences) {
+        assert(almost_equal(msv.run_on_sequence(protein), msv.parallel_run_on_sequence(protein)));
+    }
+    return 0;
 }

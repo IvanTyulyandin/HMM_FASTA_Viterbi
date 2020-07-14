@@ -228,35 +228,53 @@ float MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
 
                 // Find max from M states, max_M_buf size is even
                 // Can it be improved with local memory usage?
-                auto cur_data_size = max_M_buf_size / 2;
-                auto stride = 1;
+                auto left_half_size = max_M_buf_size / 2;
 
-                do {
+                // Rest of the reduction without last comparison of bufA[0] and bufA[1]
+                while (left_half_size > 1) {
                     queue.submit([&](sycl::handler& cgh) {
                         auto bufA = max_M_buf.get_access<mode::read_write, target::global_buffer>(cgh);
 
-                        cgh.parallel_for<reduction_step>(sycl::range<1>(cur_data_size), [=](sycl::item<1> item) {
-                            auto id = item.get_linear_id() * stride * 2;
-                            auto offset = id + stride;
-                            if (offset < max_M_buf_size) {
-                                bufA[id] = sycl::fmax(bufA[id], bufA[offset]);
-                            }
+                        cgh.parallel_for<reduction_step>(sycl::range<1>(left_half_size), [=](sycl::item<1> item) {
+                            auto id = item.get_linear_id();
+                            auto offset = left_half_size + id;
+                            bufA[id] = sycl::fmax(bufA[id], bufA[offset]);
                         });
                     });
-                    stride *= 2;
-                    cur_data_size += (cur_data_size % 2);
-                    cur_data_size /= 2;
-                } while (cur_data_size > 1);
+
+                    left_half_size += (left_half_size % 2);
+                    left_half_size /= 2;
+                }
+
+                //                {
+                //                    auto bufA_host = max_M_buf.get_access<mode::read>();
+                //                    auto expected_max = sycl::fmax(bufA_host[0], bufA_host[1]);
+                //                    auto real_max = sycl::fmax(bufA_host[0], bufA_host[1]);
+                //                    auto ind = 0;
+                //                    for (size_t c = 2; c < max_M_buf_size; ++c) {
+                //                        if (real_max < bufA_host[c]) {
+                //                            real_max = bufA_host[c];
+                //                            ind = c;
+                //                        }
+                //                    }
+                //                    if (expected_max != real_max) {
+                //                        std::cout << expected_max << " vs " << real_max << '\n';
+                //                        std::cout << ind << '\n';
+                //                        return 0;
+                //                    } else {
+                //                        std::cout << "Wrong reduction algorithm\n";
+                //                    }
+                //                }
 
                 queue.submit([&](sycl::handler& cgh) {
                     auto dpA = dp.get_access<mode::read_write, target::global_buffer>(cgh);
                     auto bufA = max_M_buf.get_access<mode::read, target::global_buffer>(cgh);
                     cgh.single_task<E_J_C_N_B_states_handler>([=]() {
-                        dpA[cur_row][E] = bufA[0];
-                        dpA[cur_row][J] = sycl::max(dpA[prev_row][J] + loop_score, dpA[cur_row][E] + E_J_score);
-                        dpA[cur_row][C] = sycl::max(dpA[prev_row][C] + loop_score, dpA[cur_row][E] + E_C_score);
+                        dpA[cur_row][E] = sycl::fmax(bufA[0], bufA[1]);
+                        dpA[cur_row][J] = sycl::fmax(dpA[prev_row][J] + loop_score, dpA[cur_row][E] + E_J_score);
+                        dpA[cur_row][C] = sycl::fmax(dpA[prev_row][C] + loop_score, dpA[cur_row][E] + E_C_score);
                         dpA[cur_row][N] = dpA[prev_row][N] + loop_score;
-                        dpA[cur_row][B] = sycl::max(dpA[cur_row][N] + move_score, dpA[cur_row][J] + move_score);
+                        dpA[cur_row][B] = sycl::fmax(dpA[cur_row][N] + move_score, dpA[cur_row][J] + move_score);
                     });
                 });
 

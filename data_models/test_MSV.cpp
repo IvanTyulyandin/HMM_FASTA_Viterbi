@@ -3,6 +3,8 @@
 
 #include <cassert>
 #include <cmath>
+#include <experimental/filesystem>
+#include <iostream>
 
 // code below was taken from
 // https://en.cppreference.com/w/cpp/types/numeric_limits/epsilon
@@ -17,10 +19,17 @@ typename std::enable_if<!std::numeric_limits<T>::is_integer, bool>::type almost_
 
 int main() {
     // Test MSV checking invariant for sequential and parallel MSV implementations
-    auto msv = MSV_HMM(Profile_HMM("../100.hmm"));
+    namespace fs = std::experimental::filesystem;
     auto fasta = FASTA_protein_sequences("../fasta_like_example.fsa");
-    for (const auto& protein : fasta.sequences) {
-        assert(almost_equal(msv.run_on_sequence(protein), msv.parallel_run_on_sequence(protein)));
+
+    for (const auto& profile : fs::directory_iterator("../profile_HMMs")) {
+        if (profile.path().extension() == ".hmm") {
+            auto msv = MSV_HMM(Profile_HMM(profile.path()));
+            for (const auto& protein : fasta.sequences) {
+                assert(almost_equal(msv.run_on_sequence(protein), msv.parallel_run_on_sequence(protein)));
+            }
+        }
     }
+
     return 0;
 }

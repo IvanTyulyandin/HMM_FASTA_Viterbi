@@ -1,7 +1,7 @@
 #!/bin/bash
 
 mkdir -p build
-cp *.hmm build/
+cp -u -r profile_HMMs build/
 cp *.fsa build/
 cd build
 cmake \

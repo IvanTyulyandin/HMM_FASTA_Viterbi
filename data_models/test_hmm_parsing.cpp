@@ -17,7 +17,7 @@ typename std::enable_if<!std::numeric_limits<T>::is_integer, bool>::type almost_
 float neg_ln_to_prob(double data) { return std::exp(-1 * static_cast<float>(data)); }
 
 int main() {
-    auto hmm = Profile_HMM("../100.hmm");
+    auto hmm = Profile_HMM("../profile_HMMs/100.hmm");
 
     // check header parsing
     assert(hmm.model_length == 100);

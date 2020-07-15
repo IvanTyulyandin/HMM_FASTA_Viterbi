@@ -24,12 +24,15 @@ add_library_with_sycl(TARGET data_models SOURCES ${DATA_MODELS_SRC} SYCL_SOURCES
 
 add_executable(test_hmm_parsing test_hmm_parsing.cpp ${DATA_MODELS_SRC})
 target_link_libraries(test_hmm_parsing data_models)
+target_link_libraries(test_hmm_parsing stdc++fs)
 
 add_executable(test_fasta_parsing test_fasta_parsing.cpp ${DATA_MODELS_SRC})
 target_link_libraries(test_fasta_parsing data_models)
+target_link_libraries(test_fasta_parsing stdc++fs)
 
 add_executable(test_MSV test_MSV.cpp ${DATA_MODELS_SRC})
 target_link_libraries(test_MSV data_models)
+target_link_libraries(test_MSV stdc++fs)
 
 add_test(hmm_parsing_test test_hmm_parsing)
 add_test(fasta_parsing_test test_fasta_parsing)

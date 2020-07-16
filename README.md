@@ -16,6 +16,7 @@ and second one runs executable at that directory.
 
 
 ### Status
-Work in progress. There is no code inside ```main.cpp```, but some tests can be run with ```ctest```.
-For now, there is the implementation of MSV (Multiple Segment Viterbi) algorithm in directory ```data_models```.
+Work in progress. There is no code inside ```main.cpp```, but some unit tests can be run with ```ctest```.
+In ```data_readers``` directory there are partial parsers for .hmm and .fasta formats.
+The implementation of MSV (Multiple Segment Viterbi) algorithm is in directory ```algorithms```.
 

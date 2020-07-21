@@ -16,9 +16,9 @@ class MSV_HMM {
   public:
     explicit MSV_HMM(const Profile_HMM& base_hmm);
 
-    float run_on_sequence(Protein_sequence seq);
+    Log_score run_on_sequence(Protein_sequence seq);
 
-    float parallel_run_on_sequence(Protein_sequence seq);
+    Log_score parallel_run_on_sequence(Protein_sequence seq);
 
   private:
     size_t model_length;

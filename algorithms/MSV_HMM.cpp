@@ -26,22 +26,18 @@ const auto amino_acid_num = std::unordered_map<char, int>{
     {'M', 10}, {'N', 11}, {'P', 12}, {'Q', 13}, {'R', 14}, {'S', 15}, {'T', 16}, {'V', 17}, {'W', 18}, {'Y', 19}};
 } // namespace
 
-MSV_HMM::MSV_HMM(const Profile_HMM& base_hmm) : model_length(base_hmm.model_length + 1) {
-    emission_scores.reserve(model_length);
-    // base_hmm contains info about M[1]..M[base_hmm.model_length] in
-    // match_emissions. Insert dummy node M[0]. It will be used for MSV
-    // algorithm initialization
-    emission_scores.push_back({Log_scores_array<NUM_OF_AMINO_ACIDS>{}});
+MSV_HMM::MSV_HMM(const Profile_HMM& base_hmm) : model_length(base_hmm.model_length) {
+    // base_hmm contains info about M[0]..M[base_hmm.model_length] in match_emissions,
+    // where node M[0] is zero-filled and will be used to simplify indexing.
+    emission_scores = std::vector<Log_score>(NUM_OF_AMINO_ACIDS * model_length);
 
-    std::transform(base_hmm.match_emissions.begin(), base_hmm.match_emissions.end(),
-                   std::back_inserter(emission_scores),
-                   [](const Probabilities_array<NUM_OF_AMINO_ACIDS>& node_match_emission) {
-                       auto log_scores = Log_scores_array<NUM_OF_AMINO_ACIDS>();
-                       for (size_t i = 0; i < NUM_OF_AMINO_ACIDS; ++i) {
-                           log_scores[i] = std::log(node_match_emission[i] / background_frequencies[i]);
-                       }
-                       return log_scores;
-                   });
+    for (size_t i = 0; i < model_length; ++i) {
+        const auto stride = i * NUM_OF_AMINO_ACIDS;
+        for (size_t j = 0; j < NUM_OF_AMINO_ACIDS; ++j) {
+            const auto log_score = std::log(base_hmm.match_emissions[i][j] / background_frequencies[j]);
+            emission_scores[stride + j] = log_score;
+        }
+    }
 
     // nu is expected number of hits (use 2.0 as a default).
     // https://github.com/EddyRivasLab/hmmer/blob/master/src/generic_msv.c#L39
@@ -87,9 +83,9 @@ Log_score MSV_HMM::run_on_sequence(Protein_sequence seq) {
 
     // MSV main loop
     for (size_t i = 1; i < seq.size(); ++i) {
-        const auto amino_acid_index = amino_acid_num.at(seq[i]);
+        const auto stride = amino_acid_num.at(seq[i]) * NUM_OF_AMINO_ACIDS;
         for (size_t j = 1; j < model_length; ++j) {
-            dp[i][j] = emission_scores[j][amino_acid_index] + std::max(dp[i - 1][j - 1], dp[i - 1][B] + tr_B_Mk);
+            dp[i][j] = emission_scores[stride + j] + std::max(dp[i - 1][j - 1], dp[i - 1][B] + tr_B_Mk);
             dp[i][E] = std::max(dp[i][E], dp[i][j]);
         }
 
@@ -160,9 +156,9 @@ Log_score MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
 
         auto queue = sycl::queue(sycl::default_selector(), exception_handler);
         auto dp = sycl::buffer<float, 2>(sycl::range<2>(rows, cols));
-        auto emissions_buf = sycl::buffer<float, 2>(emission_scores.data()->data(),
-                                                    sycl::range<2>(emission_scores.size(), NUM_OF_AMINO_ACIDS),
-                                                    sycl::property::buffer::use_host_ptr());
+        auto emissions_buf =
+            sycl::buffer<float, 1>(emission_scores.data(), sycl::range<1>(NUM_OF_AMINO_ACIDS * model_length),
+                                   sycl::property::buffer::use_host_ptr());
 
         // The algorithm that finds maximum requires data size to be even
         // M[0] is always minus_infinity, it does not affect the maximum of M states
@@ -192,7 +188,7 @@ Log_score MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
             size_t prev_row = 0;
 
             for (size_t i = 1; i < seq.size(); ++i) {
-                const auto amino_acid_index = amino_acid_num.at(seq[i]);
+                const auto stride = amino_acid_num.at(seq[i]) * NUM_OF_AMINO_ACIDS;
 
                 // Calculate M states
                 queue.submit([&](sycl::handler& cgh) {
@@ -203,7 +199,7 @@ Log_score MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
                         sycl::range<1>(num_of_real_M_states), [=](sycl::item<1> col_work_item) {
                             auto cur_col = col_work_item.get_linear_id() + 1;
                             dpA[cur_row][cur_col] =
-                                emissions_bufA[cur_col][amino_acid_index] +
+                                emissions_bufA[stride + cur_col] +
                                 sycl::fmax(dpA[prev_row][cur_col - 1], dpA[prev_row][B] + B_Mk_score);
                         });
                 });

@@ -22,7 +22,8 @@ class MSV_HMM {
 
   private:
     size_t model_length;
-    Log_scores_arrays_vector<NUM_OF_AMINO_ACIDS> emission_scores;
+    // 2D matrix emulation [NUM_OF_AMINO_ACIDS][hmm model length]
+    std::vector<Log_score> emission_scores;
 
     // tr_X_Y == transition scores from HMM state X to state Y
     // All of these scores should be considered as weights of HMM

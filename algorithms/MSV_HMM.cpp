@@ -32,10 +32,9 @@ MSV_HMM::MSV_HMM(const Profile_HMM& base_hmm) : model_length(base_hmm.model_leng
     emission_scores = std::vector<Log_score>(NUM_OF_AMINO_ACIDS * model_length);
 
     for (size_t i = 0; i < model_length; ++i) {
-        const auto stride = i * NUM_OF_AMINO_ACIDS;
-        for (size_t j = 0; j < NUM_OF_AMINO_ACIDS; ++j) {
+        for (size_t j = 0, stride = i; j < NUM_OF_AMINO_ACIDS; ++j, stride += model_length) {
             const auto log_score = std::log(base_hmm.match_emissions[i][j] / background_frequencies[j]);
-            emission_scores[stride + j] = log_score;
+            emission_scores[stride] = log_score;
         }
     }
 

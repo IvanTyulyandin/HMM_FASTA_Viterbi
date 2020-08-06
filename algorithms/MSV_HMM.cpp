@@ -48,16 +48,15 @@ MSV_HMM::MSV_HMM(const Profile_HMM& base_hmm) : model_length(base_hmm.model_leng
 }
 
 void MSV_HMM::init_transitions_depend_on_seq(const Protein_sequence& seq) {
-    tr_loop = std::log(seq.size() / static_cast<float>(seq.size() + 3));
-    tr_move = std::log(3 / static_cast<float>(seq.size() + 3));
+    // take into account # at the beginning of Protein_sequence
+    auto size = seq.size() - 1;
+    tr_loop = std::log(size / static_cast<float>(size + 3));
+    tr_move = std::log(3 / static_cast<float>(size + 3));
 }
 
-Log_score MSV_HMM::run_on_sequence(Protein_sequence seq) {
+Log_score MSV_HMM::run_on_sequence(const Protein_sequence& seq) {
 
     init_transitions_depend_on_seq(seq);
-
-    // Insert dummy "residue" in seq
-    seq = "#" + seq;
 
     // Dynamic programming matrix,
     // where L == seq.length(), k == model_length, both with dummies
@@ -108,11 +107,8 @@ class copy_M;
 class reduction_step;
 class E_J_C_N_B_states_handler;
 
-Log_score MSV_HMM::parallel_run_on_sequence(Protein_sequence seq) {
+Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
     init_transitions_depend_on_seq(seq);
-
-    // Insert dummy "residue" in seq
-    seq = "#" + seq;
 
     // Dynamic programming matrix,
     // where k == model_length with dummy

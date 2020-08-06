@@ -11,11 +11,10 @@ FASTA_protein_sequences::FASTA_protein_sequences(const std::string& file_path) {
     }
 
     auto line = std::string();
-    auto current_sequence = std::string();
 
     while (std::getline(file, line)) {
         if (line[0] == '>') {
-            sequences.push_back("");
+            sequences.push_back("#");
         } else {
             sequences.back() += line;
         }

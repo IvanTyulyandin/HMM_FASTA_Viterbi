@@ -42,9 +42,10 @@ MSV_HMM::MSV_HMM(const Profile_HMM& base_hmm) : model_length(base_hmm.model_leng
     // https://github.com/EddyRivasLab/hmmer/blob/master/src/generic_msv.c#L39
     constexpr float nu = 2.0;
 
-    tr_B_Mk = std::log(2 / static_cast<float>(base_hmm.model_length * (base_hmm.model_length + 1)));
+    tr_B_Mk = std::log(2.0f / static_cast<float>(base_hmm.model_length * (base_hmm.model_length + 1)));
     tr_E_C = std::log((nu - 1.0f) / nu);
     tr_E_J = std::log(1.0f / nu);
+    std::cout << model_length << ' ' << emission_scores.size() << ' ' << tr_B_Mk << ' ' << tr_E_C << ' ' << tr_E_J << '\n';
 }
 
 void MSV_HMM::init_transitions_depend_on_seq(const Protein_sequence& seq) {

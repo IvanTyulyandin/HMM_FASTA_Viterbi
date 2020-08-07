@@ -59,8 +59,10 @@ Profile_HMM::Profile_HMM(const std::string& file_path) {
 }
 
 void Profile_HMM::extract_length(std::ifstream& file) {
-    // expecting LENG x
-    model_length = std::stoi(read_value_after_tag(file, "LENG"));
+    // Expecting LENG x.
+    // Will insert dummy M0 that is not included in HMM,
+    // while insert_emissions and transitions 0-index nodes are exist
+    model_length = std::stoi(read_value_after_tag(file, "LENG")) + 1;
 }
 
 void Profile_HMM::extract_stats_local(std::ifstream& file) {
@@ -91,9 +93,9 @@ void Profile_HMM::extract_probabilities(std::ifstream& file) {
     auto data = std::string{};
     data = read_value_after_tag(file, "COMPO");
 
-    insert_emissions.reserve(model_length + 1);
-    match_emissions.reserve(model_length + 1);
-    transitions.reserve(model_length + 1);
+    insert_emissions.reserve(model_length);
+    match_emissions.reserve(model_length);
+    transitions.reserve(model_length);
 
     // skip COMPO, next line is insert_emissions[0]
     std::getline(file, data);
@@ -104,7 +106,7 @@ void Profile_HMM::extract_probabilities(std::ifstream& file) {
     match_emissions.push_back(Probabilities_array<NUM_OF_AMINO_ACIDS>());
 
     // parse nodes 1..model_length
-    for (size_t i = 1; i <= model_length; ++i) {
+    for (size_t i = 1; i < model_length; ++i) {
         data = read_value_after_tag(file, std::to_string(i));
         match_emissions.push_back(parse_probabilities<NUM_OF_AMINO_ACIDS>(data));
         std::getline(file, data);

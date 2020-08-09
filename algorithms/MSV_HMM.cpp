@@ -32,9 +32,9 @@ MSV_HMM::MSV_HMM(const Profile_HMM& base_hmm) : model_length(base_hmm.model_leng
     emission_scores = std::vector<Log_score>(NUM_OF_AMINO_ACIDS * model_length);
 
     for (size_t i = 0; i < model_length; ++i) {
-        for (size_t j = 0, stride = i; j < NUM_OF_AMINO_ACIDS; ++j, stride += model_length) {
+        for (size_t j = 0; j < NUM_OF_AMINO_ACIDS; ++j) {
             const auto log_score = std::log(base_hmm.match_emissions[i][j] / background_frequencies[j]);
-            emission_scores[stride] = log_score;
+            emission_scores[j * model_length + i] = log_score;
         }
     }
 
@@ -45,7 +45,6 @@ MSV_HMM::MSV_HMM(const Profile_HMM& base_hmm) : model_length(base_hmm.model_leng
     tr_B_Mk = std::log(2.0f / static_cast<float>(base_hmm.model_length * (base_hmm.model_length + 1)));
     tr_E_C = std::log((nu - 1.0f) / nu);
     tr_E_J = std::log(1.0f / nu);
-    std::cout << model_length << ' ' << emission_scores.size() << ' ' << tr_B_Mk << ' ' << tr_E_C << ' ' << tr_E_J << '\n';
 }
 
 void MSV_HMM::init_transitions_depend_on_seq(const Protein_sequence& seq) {

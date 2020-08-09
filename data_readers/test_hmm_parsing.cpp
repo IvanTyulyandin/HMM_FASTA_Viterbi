@@ -20,7 +20,7 @@ int main() {
     auto hmm = Profile_HMM("../profile_HMMs/100.hmm");
 
     // check header parsing
-    assert(hmm.model_length == 100);
+    assert(hmm.model_length == 101);
     assert(almost_equal(hmm.stats_local_msv_mu, static_cast<float>(-9.5678)));
     assert(almost_equal(hmm.stats_local_forward_lambda, static_cast<float>(0.71755)));
 

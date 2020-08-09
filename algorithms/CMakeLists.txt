@@ -27,3 +27,18 @@ target_link_libraries(test_MSV data_readers)
 target_link_libraries(test_MSV stdc++fs)
 
 add_test(test_MSV test_MSV)
+
+# Add specialized algorithms
+option(GEN_SPEC "Build specialized version" ON)
+
+set(GEN_SPEC_ALGORITHMS_SRC MSV_HMM_spec.hpp MSV_HMM_spec.cpp)
+
+if (GEN_SPEC)
+    add_library_with_sycl(TARGET gen_spec_algorithms SOURCES ${GEN_SPEC_ALGORITHMS_SRC} SYCL_SOURCES MSV_HMM_spec.cpp)
+
+    add_executable(test_MSV_spec test_MSV_spec.cpp ${ALGORITHMS_SRC} ${GEN_SPEC_ALGORITHMS_SRC})
+    target_link_libraries(test_MSV_spec algorithms)
+    target_link_libraries(test_MSV_spec data_readers)
+
+    add_test(test_MSV_spec test_MSV_spec)
+endif(GEN_SPEC)

@@ -1,5 +1,9 @@
 #!/bin/bash
 
+cd algorithms
+python3 MSV_p_gen.py ../profile_HMMs/100.hmm
+cd ..
+
 mkdir -p build
 cp -u -r profile_HMMs build/
 cp *.fsa build/

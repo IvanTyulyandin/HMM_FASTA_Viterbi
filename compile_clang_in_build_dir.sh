@@ -1,7 +1,7 @@
 #!/bin/bash
 
 cd algorithms
-python3 MSV_p_gen.py ../profile_HMMs/100.hmm
+python3 MSV_p_gen.py $(find ../profile_HMMs -maxdepth 1 -type f -name "*.hmm")
 cd ..
 
 mkdir -p build

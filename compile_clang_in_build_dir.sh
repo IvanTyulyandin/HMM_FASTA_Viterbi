@@ -1,6 +1,8 @@
 #!/bin/bash
 
 cd algorithms
+cp /dev/null MSV_HMM_spec.cpp
+cp /dev/null MSV_HMM_spec.hpp
 python3 MSV_p_gen.py $(find ../profile_HMMs -maxdepth 1 -type f -name "*.hmm")
 cd ..
 

@@ -6,6 +6,7 @@ find_package(ComputeCpp REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
 add_compile_options(-Wall -Wextra -pedantic -Werror -Wno-unused-function -Wno-unused-variable)
+add_compile_options(-march=native -O3 -pipe)
 
 enable_testing()
 

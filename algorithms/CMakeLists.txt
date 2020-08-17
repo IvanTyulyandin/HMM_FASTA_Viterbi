@@ -28,6 +28,11 @@ target_link_libraries(test_MSV stdc++fs)
 
 add_test(test_MSV test_MSV)
 
+add_executable(benchmark_MSV benchmark_MSV.cpp ${ALGORITHMS_SRC})
+target_link_libraries(benchmark_MSV algorithms)
+target_link_libraries(benchmark_MSV data_readers)
+target_link_libraries(benchmark_MSV stdc++fs)
+
 # Add specialized algorithms
 option(GEN_SPEC "Build specialized version" ON)
 

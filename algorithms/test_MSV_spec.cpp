@@ -44,7 +44,7 @@ int main() {
     });
 
     namespace fs = std::experimental::filesystem;
-    auto fasta = FASTA_protein_sequences("../fasta_like_example.fsa");
+    auto fasta = FASTA_protein_sequences("../FASTA_files/fasta_like_example.fsa");
 
     for (const auto& profile : fs::directory_iterator("../profile_HMMs")) {
         if (profile.path().extension() == ".hmm") {

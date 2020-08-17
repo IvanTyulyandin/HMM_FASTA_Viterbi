@@ -3,7 +3,7 @@
 #include <cassert>
 
 int main() {
-    auto fasta_seq = FASTA_protein_sequences("../fasta_like_example.fsa");
+    auto fasta_seq = FASTA_protein_sequences("../FASTA_files/fasta_like_example.fsa");
     assert(
         (fasta_seq.sequences == Protein_sequences{{"#ACDEFGHIKLMNPQTVWY"},
                                                   {"#ACDKLMNPQTVWYEFGHI"},

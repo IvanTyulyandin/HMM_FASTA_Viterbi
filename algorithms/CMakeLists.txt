@@ -42,4 +42,10 @@ if (GEN_SPEC)
     target_link_libraries(test_MSV_spec stdc++fs)
 
     add_test(test_MSV_spec test_MSV_spec)
+
+    add_executable(benchmark_MSV_spec benchmark_MSV_spec.cpp ${GEN_SPEC_ALGORITHMS_SRC})
+    target_link_libraries(benchmark_MSV_spec algorithms)
+    target_link_libraries(benchmark_MSV_spec data_readers)
+    target_link_libraries(benchmark_MSV_spec stdc++fs)
+
 endif(GEN_SPEC)

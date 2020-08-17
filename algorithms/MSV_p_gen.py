@@ -128,7 +128,7 @@ Log_score MSV_HMM_spec::parallel_run_on_sequence_{hmm_name}(const Protein_sequen
     const auto size = seq.size() - 1;
     const auto loop_score = std::log(size / static_cast<float>(size + 3));
     const auto move_score = std::log(3 / static_cast<float>(size + 3));
-    auto emission_scores = std::array<Log_score, {NUM_OF_AMINO_ACIDS * model_length}>{cpp_emissions_scores_initializer};
+    static constexpr auto emission_scores = std::array<Log_score, {NUM_OF_AMINO_ACIDS * model_length}>{cpp_emissions_scores_initializer};
 
     namespace sycl = cl::sycl;
     using target = sycl::access::target;

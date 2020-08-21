@@ -174,18 +174,21 @@ Log_score MSV_HMM_spec::parallel_run_on_sequence_{hmm_name}(const Protein_sequen
             size_t prev_row = 0;
 
             for (size_t i = 1; i < seq.size(); ++i) {{
-                const auto stride = amino_acid_num.at(seq[i]) * {NUM_OF_AMINO_ACIDS};
 
                 // Calculate M states
                 queue.submit([&](sycl::handler& cgh) {{
                     auto dpA = dp.get_access<mode::write, target::global_buffer>(cgh);
-                    auto emissions_bufA = emissions_buf.get_access<mode::read, target::constant_buffer>(cgh);
+                    auto emissions_bufA = sycl::buffer<float, 1>(
+                            emissions_buf,
+                            sycl::id<1>(amino_acid_num.at(seq[i]) * {NUM_OF_AMINO_ACIDS}),
+                            sycl::range<1>({model_length}))
+                        .get_access<mode::read, target::constant_buffer>(cgh);
 
                     cgh.parallel_for<{M_states_handler}>(
                         sycl::range<1>({num_of_real_M_states}), [=](sycl::item<1> col_work_item) {{
                             auto cur_col = col_work_item.get_linear_id() + 1;
                             dpA[cur_row][cur_col] =
-                                emissions_bufA[stride + cur_col] +
+                                emissions_bufA[cur_col] +
                                 sycl::fmax(dpA[prev_row][cur_col - 1], dpA[prev_row][{B}] + {B_Mk_score});
                         }});
                 }});

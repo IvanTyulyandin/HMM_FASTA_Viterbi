@@ -33,6 +33,10 @@ target_link_libraries(benchmark_MSV algorithms)
 target_link_libraries(benchmark_MSV data_readers)
 target_link_libraries(benchmark_MSV stdc++fs)
 
+add_executable(benchmark_MSV_1400 benchmark_MSV_1400.cpp ${ALGORITHMS_SRC})
+target_link_libraries(benchmark_MSV_1400 algorithms)
+target_link_libraries(benchmark_MSV_1400 data_readers)
+
 # Add specialized algorithms
 option(GEN_SPEC "Build specialized version" ON)
 
@@ -52,5 +56,9 @@ if (GEN_SPEC)
     target_link_libraries(benchmark_MSV_spec algorithms)
     target_link_libraries(benchmark_MSV_spec data_readers)
     target_link_libraries(benchmark_MSV_spec stdc++fs)
+
+    add_executable(benchmark_MSV_spec_1400 benchmark_MSV_spec_1400.cpp)
+    add_sycl_to_target(TARGET benchmark_MSV_spec_1400 SOURCES benchmark_MSV_spec_1400.cpp)
+    target_link_libraries(benchmark_MSV_spec_1400 data_readers)
 
 endif(GEN_SPEC)

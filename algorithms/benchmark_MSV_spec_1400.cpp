@@ -7,6 +7,8 @@ using Log_score = float;
 #include <iostream>
 #include <unordered_map>
 
+static auto run_time = std::chrono::milliseconds{0};
+
 namespace {
 const auto amino_acid_num = std::unordered_map<char, int>{
     {'A', 0},  {'C', 1},  {'D', 2},  {'E', 3},  {'F', 4},  {'G', 5},  {'H', 6},  {'I', 7},  {'K', 8},  {'L', 9},
@@ -1434,6 +1436,8 @@ Log_score parallel_run_on_sequence_1400(const Protein_sequence& seq) {
       -0.428505, 0.500675, -0.458465, -0.663595, -0.310105, -0.125665, -0.518015, -0.507255, 0.230395, -0.548395, 0.722075, -0.327125, -0.637425, -0.402825, 0.520125, 0.130055, -0.200265, -0.262595, -0.584115, 0.296865,
     };
 
+    auto start_time = std::chrono::steady_clock::now();
+
     namespace sycl = cl::sycl;
     using target = sycl::access::target;
     using mode = sycl::access::mode;
@@ -1542,6 +1546,11 @@ Log_score parallel_run_on_sequence_1400(const Protein_sequence& seq) {
             }
 
             auto dpA_host = dp.get_access<mode::read>();
+            
+            auto cur = std::chrono::steady_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(cur - start_time);
+            run_time += duration;
+
             return dpA_host[prev_row][1403] + move_score;
         } catch (sycl::exception& e) {
             std::cout << e.what() << '\n';
@@ -1570,5 +1579,6 @@ int main() {
         all_time += duration;
     }
     std::cout << "MSV_spec_1400: " << all_time.count() << " milliseconds\n";
+    std::cout << "MSV_spec_1400: " << run_time.count() << " milliseconds without array initialization\n";
     return 0;
 }

@@ -1,7 +1,6 @@
 import math
 import sys
 import os
-import fileinput
 
 
 def neg_ln_to_prob(prob_inside_ln: float):
@@ -19,6 +18,7 @@ cpp_MSV_initial = f'''#include \"MSV_HMM_spec.hpp\"
 #include <unordered_map>
 
 namespace {{
+
 const auto amino_acid_num = std::unordered_map<char, int>{{
     {{'A', 0}},  {{'C', 1}},  {{'D', 2}},  {{'E', 3}},  {{'F', 4}},  {{'G', 5}},  {{'H', 6}},  {{'I', 7}},  {{'K', 8}},  {{'L', 9}},
     {{'M', 10}}, {{'N', 11}}, {{'P', 12}}, {{'Q', 13}}, {{'R', 14}}, {{'S', 15}}, {{'T', 16}}, {{'V', 17}}, {{'W', 18}}, {{'Y', 19}}}};
@@ -33,6 +33,8 @@ background_frequencies: list = [
     0.0482904, 0.0395639, 0.0540978, 0.0683364,  # P Q R S
     0.0540687, 0.0673417, 0.0114135, 0.0304133   # T V W Y
 ]
+
+hmm_emissions: dict = {}
 
 # generate specialized code
 for hmm_file in sys.argv[1:]:
@@ -76,13 +78,14 @@ for hmm_file in sys.argv[1:]:
                 log_score: float = math.log(match_emissions[i][j] / background_frequencies[j])
                 emissions_scores[j * model_length + i] = log_score
 
-    # embed emissions_scores
+    # read emissions_scores
     cpp_emissions_scores_initializer: str = '{\n'
     for i in range(model_length):
         cpp_emissions_scores_initializer += '      '
         stride: int = i * NUM_OF_AMINO_ACIDS
         cpp_emissions_scores_initializer += ', '.join(map(lambda f: '%.6f' % f, emissions_scores[stride:stride+20])) + ',\n'
     cpp_emissions_scores_initializer += '    }'
+    hmm_emissions[hmm_name] = cpp_emissions_scores_initializer
 
     # constants calculated from model_length
     B_Mk_score: str = 'static_cast<float>(' + str(math.log(2.0 / (model_length * (model_length + 1)))) + ')'
@@ -121,14 +124,11 @@ class {reduction_step};
 class {E_J_C_N_B_states_handler};
 
 Log_score MSV_HMM_spec::parallel_run_on_sequence_{hmm_name}(const Protein_sequence& seq) {{
-    // workaround to make C++ understand Python output
-    constexpr float inf = std::numeric_limits<float>::infinity();
 
     // init scores that dependens on seq
     const auto size = seq.size() - 1;
     const auto loop_score = std::log(size / static_cast<float>(size + 3));
     const auto move_score = std::log(3 / static_cast<float>(size + 3));
-    static constexpr auto emission_scores = std::array<Log_score, {NUM_OF_AMINO_ACIDS * model_length}>{cpp_emissions_scores_initializer};
 
     namespace sycl = cl::sycl;
     using target = sycl::access::target;
@@ -147,7 +147,7 @@ Log_score MSV_HMM_spec::parallel_run_on_sequence_{hmm_name}(const Protein_sequen
         auto queue = sycl::queue(sycl::default_selector(), exception_handler);
         auto dp = sycl::buffer<float, 2>(sycl::range<2>({rows}, {cols}));
         auto emissions_buf =
-            sycl::buffer<float, 1>(emission_scores.data(), sycl::range<1>({NUM_OF_AMINO_ACIDS * model_length}),
+            sycl::buffer<float, 1>(emission_scores_{hmm_name}.data(), sycl::range<1>({NUM_OF_AMINO_ACIDS * model_length}),
                                    sycl::property::buffer::use_host_ptr());
 
         auto max_M_buf = sycl::buffer<float, 1>(sycl::range<1>({num_of_real_M_states + should_use_M0}));
@@ -259,25 +259,32 @@ Log_score MSV_HMM_spec::parallel_run_on_sequence_{hmm_name}(const Protein_sequen
             out.write(cpp_MSV_initial)
             out.write(p_gen)
 
-    cpp_MSV_header = f'''#pragma once
-    
+
+with open('MSV_HMM_spec.hpp', 'w') as header:
+    header.write(f'''#pragma once
+
 #include "FASTA_protein_sequences.hpp"
+
+#include <array>
+#include <limits>
 
 using Log_score = float;
 
+// workaround to make C++ understand Python output
+constexpr float inf = std::numeric_limits<float>::infinity();
+
 class MSV_HMM_spec {{
   public:
-    static Log_score parallel_run_on_sequence_{hmm_name}(const Protein_sequence& seq);
-}};
-'''
+''')
+    for hmm_file in sys.argv[1:]:
+        hmm_name: str = hmm_file[:-4]
+        slash_index: int = hmm_name.rfind('/')
+        if slash_index != -1:
+            hmm_name = hmm_name[slash_index+1:]
+        header.write(f'''    static Log_score parallel_run_on_sequence_{hmm_name}(const Protein_sequence& seq);\n''')
 
-    # May be there is more elegant way to replace last string in file
-    if os.path.exists(out_file_name_header) and os.stat(out_file_name_header).st_size > 0:
-        with fileinput.input(files=out_file_name_header, inplace=True) as f:
-            for line in f:
-                if '};' in line:
-                    line = f'    static Log_score parallel_run_on_sequence_{hmm_name}(const Protein_sequence& seq);\n' + line
-                sys.stdout.write(line)
-    else:
-        with open(out_file_name_header, 'w') as out:
-            out.write(cpp_MSV_header)
+    header.write(f'''\n  private:\n''')
+
+    for hmm_name, emissions in hmm_emissions.items():
+        header.write(f'''    static constexpr auto emission_scores_{hmm_name} = std::array<Log_score, {len(emissions)}>{emissions};\n''')
+    header.write('};\n')

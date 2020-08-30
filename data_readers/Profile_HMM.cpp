@@ -51,11 +51,16 @@ Profile_HMM::Profile_HMM(const std::string& file_path) {
         std::cout << "Failed to open " << file_path << '\n';
         return;
     }
+    extract_name(file);
     extract_length(file);
     extract_stats_local(file);
     extract_probabilities(file);
 
     file.close();
+}
+
+void Profile_HMM::extract_name(std::ifstream& file) {
+    name = read_value_after_tag(file, "NAME");
 }
 
 void Profile_HMM::extract_length(std::ifstream& file) {

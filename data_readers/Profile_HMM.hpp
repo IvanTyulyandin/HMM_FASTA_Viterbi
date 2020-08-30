@@ -12,6 +12,7 @@ constexpr int NUM_OF_AMINO_ACIDS = 20;
 constexpr int NUM_OF_TRANSITIONS = 7;
 
 using Probability = float;
+using Profile_name = std::string;
 
 template <int N> using Probabilities_array = std::array<Probability, N>;
 
@@ -20,6 +21,8 @@ template <int N> using Probabilities_arrays_vector = std::vector<Probabilities_a
 class Profile_HMM {
   public:
     explicit Profile_HMM(const std::string& file_path);
+
+    Profile_name name;
 
     Probabilities_arrays_vector<NUM_OF_AMINO_ACIDS> match_emissions;
     Probabilities_arrays_vector<NUM_OF_AMINO_ACIDS> insert_emissions;
@@ -39,6 +42,7 @@ class Profile_HMM {
     float stats_local_forward_lambda;
 
   private:
+    void extract_name(std::ifstream& file);
     void extract_length(std::ifstream& file);
     void extract_stats_local(std::ifstream& file);
     void extract_probabilities(std::ifstream& file);

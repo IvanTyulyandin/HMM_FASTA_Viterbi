@@ -21,6 +21,7 @@ int main() {
 
     // check header parsing
     assert(hmm.model_length == 101);
+    assert(hmm.name == "Pfam-B_229");
     assert(almost_equal(hmm.stats_local_msv_mu, static_cast<float>(-9.5678)));
     assert(almost_equal(hmm.stats_local_forward_lambda, static_cast<float>(0.71755)));
 

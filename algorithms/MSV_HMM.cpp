@@ -1,6 +1,6 @@
 #include "MSV_HMM.hpp"
+#include "MSV_kernel_store.hpp"
 
-#include <CL/sycl.hpp>
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -26,7 +26,7 @@ const auto amino_acid_num = std::unordered_map<char, int>{
     {'M', 10}, {'N', 11}, {'P', 12}, {'Q', 13}, {'R', 14}, {'S', 15}, {'T', 16}, {'V', 17}, {'W', 18}, {'Y', 19}};
 } // namespace
 
-MSV_HMM::MSV_HMM(const Profile_HMM& base_hmm) : model_length(base_hmm.model_length) {
+MSV_HMM::MSV_HMM(const Profile_HMM& base_hmm) : name(base_hmm.name), model_length(base_hmm.model_length) {
     // base_hmm contains info about M[0]..M[base_hmm.model_length] in match_emissions,
     // where node M[0] is zero-filled and will be used to simplify indexing.
     emission_scores = std::vector<Log_score>(NUM_OF_AMINO_ACIDS * model_length);
@@ -132,10 +132,10 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
     {
         // Cannot capture 'this' in a SYCL kernel, introducing copy
         const auto move_score = tr_move;
+        const auto loop_score = tr_loop;
         const auto B_Mk_score = tr_B_Mk;
         const auto E_J_score = tr_E_J;
         const auto E_C_score = tr_E_C;
-        const auto loop_score = tr_loop;
         const auto num_of_real_M_states = model_length - 1; // count without dummy M0
 
         // optional parameter for queue
@@ -150,7 +150,12 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
         };
 
         auto queue = sycl::queue(sycl::default_selector(), exception_handler);
-        auto dp = sycl::buffer<float, 2>(sycl::range<2>(rows, cols));
+
+        auto dp_cur = sycl::buffer<float, 1>(sycl::range<1>(cols));
+        auto dp_prev = sycl::buffer<float, 1>(sycl::range<1>(cols));
+        // for swap purposes
+        auto tmp = sycl::buffer<float, 1>();
+
         auto emissions_buf =
             sycl::buffer<float, 1>(emission_scores.data(), sycl::range<1>(NUM_OF_AMINO_ACIDS * model_length),
                                    sycl::property::buffer::use_host_ptr());
@@ -161,54 +166,39 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
         auto max_M_buf = sycl::buffer<float, 1>(sycl::range<1>(num_of_real_M_states + should_use_M0));
         const auto max_M_buf_size = max_M_buf.get_count();
 
+        Spec_kernels_map kernels_map = get_spec_kernels_map();
+        // TODO: assume calling only specialized version
+        Kernels_pack spec_kernels = kernels_map[name];
+
         // dp initialization, dp[1] left as is, i.e. "trash" values
         try {
             queue.submit([&](sycl::handler& cgh) {
-                auto dpA = dp.get_access<mode::discard_write, target::global_buffer>(cgh);
+                auto dp_prev_A = dp_prev.get_access<mode::discard_write, target::global_buffer>(cgh);
                 cgh.parallel_for<init_dp>(sycl::range<1>(cols), [=](sycl::item<1> col_work_item) {
-                    dpA[0][col_work_item.get_linear_id()] = minus_infinity;
+                    dp_prev_A[col_work_item.get_linear_id()] = minus_infinity;
                 });
             });
 
             queue.submit([&](sycl::handler& cgh) {
-                auto dpA = dp.get_access<mode::write, target::global_buffer>(cgh);
+                auto dp_cur_A = dp_cur.get_access<mode::write, target::global_buffer>(cgh);
+                auto dp_prev_A = dp_prev.get_access<mode::write, target::global_buffer>(cgh);
                 cgh.single_task<init_N_B>([=]() {
-                    dpA[1][0] = minus_infinity;
-                    dpA[0][N] = 0.0;
-                    dpA[0][B] = move_score; // tr_N_B
+                    dp_cur_A[0] = minus_infinity;
+                    dp_prev_A[N] = 0.0;
+                    dp_prev_A[B] = move_score; // tr_N_B
                 });
             });
-
-            size_t cur_row = 1;
-            size_t prev_row = 0;
 
             for (size_t i = 1; i < seq.size(); ++i) {
                 const auto stride = amino_acid_num.at(seq[i]) * NUM_OF_AMINO_ACIDS;
 
                 // Calculate M states
-                queue.submit([&](sycl::handler& cgh) {
-                    auto dpA = dp.get_access<mode::write, target::global_buffer>(cgh);
-                    auto emissions_bufA = emissions_buf.get_access<mode::read, target::constant_buffer>(cgh);
-
-                    cgh.parallel_for<M_states_handler>(
-                        sycl::range<1>(num_of_real_M_states), [=](sycl::item<1> col_work_item) {
-                            auto cur_col = col_work_item.get_linear_id() + 1;
-                            dpA[cur_row][cur_col] =
-                                emissions_bufA[stride + cur_col] +
-                                sycl::fmax(dpA[prev_row][cur_col - 1], dpA[prev_row][B] + B_Mk_score);
-                        });
-                });
+                auto m_handler_gen = std::get<M_states_handler_gen_num>(spec_kernels);
+                queue.submit(m_handler_gen(dp_cur, dp_prev, emissions_buf, amino_acid_num, seq, i));
 
                 // Data preparation to get max from M states
-                queue.submit([&](sycl::handler& cgh) {
-                    auto dpA = dp.get_access<mode::read, target::global_buffer>(cgh);
-                    auto bufA = max_M_buf.get_access<mode::discard_write, target::global_buffer>(cgh);
-
-                    cgh.parallel_for<copy_M>(sycl::range<1>(max_M_buf_size), [=](sycl::item<1> col_work_item) {
-                        auto id = col_work_item.get_linear_id();
-                        bufA[id] = dpA[cur_row][id + 1 - should_use_M0];
-                    });
-                });
+                auto m_copy_gen = std::get<M_copy_gen_num>(spec_kernels);
+                queue.submit(m_copy_gen(dp_cur, max_M_buf));
 
                 // Find max from M states, max_M_buf size is even
                 // Can it be improved with local memory usage?
@@ -231,23 +221,26 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
                 }
 
                 queue.submit([&](sycl::handler& cgh) {
-                    auto dpA = dp.get_access<mode::read_write, target::global_buffer>(cgh);
+                    auto dp_cur_A = dp_cur.get_access<mode::write, target::global_buffer>(cgh);
+                    auto dp_prev_A = dp_cur.get_access<mode::read, target::global_buffer>(cgh);
                     auto bufA = max_M_buf.get_access<mode::read, target::global_buffer>(cgh);
+
                     cgh.single_task<E_J_C_N_B_states_handler>([=]() {
-                        dpA[cur_row][E] = sycl::fmax(bufA[0], bufA[1]);
-                        dpA[cur_row][J] = sycl::fmax(dpA[prev_row][J] + loop_score, dpA[cur_row][E] + E_J_score);
-                        dpA[cur_row][C] = sycl::fmax(dpA[prev_row][C] + loop_score, dpA[cur_row][E] + E_C_score);
-                        dpA[cur_row][N] = dpA[prev_row][N] + loop_score;
-                        dpA[cur_row][B] = sycl::fmax(dpA[cur_row][N] + move_score, dpA[cur_row][J] + move_score);
+                        dp_cur_A[E] = sycl::fmax(bufA[0], bufA[1]);
+                        dp_cur_A[J] = sycl::fmax(dp_prev_A[J] + loop_score, dp_cur_A[E] + E_J_score);
+                        dp_cur_A[C] = sycl::fmax(dp_prev_A[C] + loop_score, dp_cur_A[E] + E_C_score);
+                        dp_cur_A[N] = dp_prev_A[N] + loop_score;
+                        dp_cur_A[B] = sycl::fmax(dp_cur_A[N] + move_score, dp_cur_A[J] + move_score);
                     });
                 });
 
-                prev_row = cur_row;
-                cur_row = 1 - cur_row;
+                tmp = std::move(dp_cur);
+                dp_cur = std::move(dp_prev);
+                dp_prev = std::move(tmp);
             }
 
-            auto dpA_host = dp.get_access<mode::read>();
-            return dpA_host[prev_row][C] + move_score;
+            auto dpA_host = dp_prev.get_access<mode::read>();
+            return dpA_host[C] + move_score;
         } catch (sycl::exception& e) {
             std::cout << e.what() << '\n';
         }

@@ -21,6 +21,7 @@ class MSV_HMM {
     Log_score parallel_run_on_sequence(const Protein_sequence& seq);
 
   private:
+    Profile_name name;
     size_t model_length;
     // 2D matrix emulation [NUM_OF_AMINO_ACIDS][hmm model length]
     std::vector<Log_score> emission_scores;

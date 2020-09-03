@@ -1,5 +1,9 @@
 #!/bin/bash
 
+cd algorithms
+python3 MSV_p_gen.py $(find ../profile_HMMs -maxdepth 1 -type f -name "*.hmm")
+cd ..
+
 mkdir -p build
 cp -u -r profile_HMMs build/
 cp -u -r FASTA_files build/

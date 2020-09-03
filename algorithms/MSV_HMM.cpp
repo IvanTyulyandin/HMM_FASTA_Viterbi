@@ -102,8 +102,6 @@ Log_score MSV_HMM::run_on_sequence(const Protein_sequence& seq) {
 // SYCL kernel names
 class init_dp;
 class init_N_B;
-class M_states_handler;
-class copy_M;
 class reduction_step;
 class E_J_C_N_B_states_handler;
 
@@ -133,7 +131,6 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
         // Cannot capture 'this' in a SYCL kernel, introducing copy
         const auto move_score = tr_move;
         const auto loop_score = tr_loop;
-        const auto B_Mk_score = tr_B_Mk;
         const auto E_J_score = tr_E_J;
         const auto E_C_score = tr_E_C;
         const auto num_of_real_M_states = model_length - 1; // count without dummy M0
@@ -168,7 +165,15 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
 
         Spec_kernels_map kernels_map = get_spec_kernels_map();
         // TODO: assume calling only specialized version
-        Kernels_pack spec_kernels = kernels_map[name];
+        Kernels_pack spec_kernels;
+        if (auto iter_to_pack = kernels_map.find(model_length);
+            iter_to_pack != kernels_map.end())
+        {
+            spec_kernels = iter_to_pack->second;
+        } else {
+            std::cout << "Failure! Can not find specialized kernel with length " << model_length << "!\n";
+            return -1;
+        }
 
         // dp initialization, dp[1] left as is, i.e. "trash" values
         try {

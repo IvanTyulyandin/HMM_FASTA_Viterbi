@@ -1,6 +1,7 @@
 #!/bin/bash
 
 cd algorithms
+python3 clean_MSV_kernel_store.py
 python3 MSV_p_gen.py $(find ../profile_HMMs -maxdepth 1 -type f -name "*.hmm")
 cd ..
 

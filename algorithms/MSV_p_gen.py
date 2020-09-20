@@ -180,7 +180,7 @@ Log_score MSV_HMM_spec::parallel_run_on_sequence_{hmm_name}(const Protein_sequen
                     auto dpA = dp.get_access<mode::write, target::global_buffer>(cgh);
                     auto emissions_bufA = sycl::buffer<float, 1>(
                             emissions_buf,
-                            sycl::id<1>(amino_acid_num.at(seq[i]) * {NUM_OF_AMINO_ACIDS}),
+                            sycl::id<1>(amino_acid_num.at(seq[i]) * {model_length}),
                             sycl::range<1>({model_length}))
                         .get_access<mode::read, target::constant_buffer>(cgh);
 

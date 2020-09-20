@@ -1,9 +1,12 @@
 cmake_minimum_required(VERSION 3.15)
 project(algorithms)
 
+find_package(OpenCL REQUIRED)
+
 set(ALGORITHMS_SRC MSV_HMM.hpp MSV_HMM.cpp)
 
 add_library(algorithms ${ALGORITHMS_SRC})
+target_link_libraries(algorithms OpenCL::OpenCL)
 
 add_executable(test_MSV test_MSV.cpp)
 target_link_libraries(test_MSV algorithms)

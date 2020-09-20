@@ -81,7 +81,7 @@ Log_score MSV_HMM::run_on_sequence(const Protein_sequence& seq) {
 
     // MSV main loop
     for (size_t i = 1; i < seq.size(); ++i) {
-        const auto stride = amino_acid_num.at(seq[i]) * NUM_OF_AMINO_ACIDS;
+        const auto stride = amino_acid_num.at(seq[i]) * model_length;
         for (size_t j = 1; j < model_length; ++j) {
             dp[i][j] = emission_scores[stride + j] + std::max(dp[i - 1][j - 1], dp[i - 1][B] + tr_B_Mk);
             dp[i][E] = std::max(dp[i][E], dp[i][j]);

@@ -50,7 +50,7 @@ f'''Command_group_function M_states_handler_{length}(
                 auto dp_prev_A = dp_prev.get_access<mode::read, target::global_buffer>(cgh);
                 auto emissions_bufA = sycl::buffer<float, 1>(
                                     emissions_buf,
-                                    sycl::id<1>(amino_acid_num.at(seq[i]) * {NUM_OF_AMINO_ACIDS}),
+                                    sycl::id<1>(amino_acid_num.at(seq[i]) * {length}),
                                     sycl::range<1>({length}))
                                 .get_access<mode::read, target::constant_buffer>(cgh);
 

@@ -5,7 +5,7 @@ cp -u -r profile_HMMs build/
 cp -u -r FASTA_files build/
 cd build
 cmake \
-    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_BUILD_TYPE=Debug \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_CXX_COMPILER=clang++ \
     ..

@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <fstream>
+#include <sstream>
 #include <limits>
 #include <unordered_map>
 
@@ -202,6 +204,78 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
 
     auto ctx = cl::Context(devices, NULL, NULL, NULL, &err);
     check_errors(err, "context creation");
+
+    // Dynamic programming matrix,
+    // where k == model_length with dummy
+    //
+    //   M0 .. Mk-1 E J C N B
+    // 0
+    // 1
+
+    const auto E = model_length;
+    const auto J = model_length + 1;
+    const auto C = model_length + 2;
+    const auto N = model_length + 3;
+    const auto B = model_length + 4;
+    const cl::size_type cols = model_length + 5;
+    const cl::size_type num_of_real_M_states = model_length - 1; // count without dummy M0
+
+    constexpr auto NO_HOST_PTR = static_cast<void*>(nullptr);
+
+    auto dp_cur = cl::Buffer(ctx,
+            static_cast<cl_mem_flags>(CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY), 
+            cols, NO_HOST_PTR, &err);
+    check_errors(err, "dp_cur creation");
+
+    auto dp_prev = cl::Buffer(ctx,
+            static_cast<cl_mem_flags>(CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY), 
+            cols, NO_HOST_PTR, &err);
+    check_errors(err, "dp_prev creation");
+
+    auto emissions_buf = cl::Buffer(ctx,
+            static_cast<cl_mem_flags>(CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR),
+            emission_scores.size(), emission_scores.data(), &err);
+    check_errors(err, "emission_buf creation");
+
+    const auto should_use_M0 = static_cast<int>(num_of_real_M_states % 2 != 0);
+    const auto max_M_buf_size = num_of_real_M_states + should_use_M0;
+    auto max_M_buf = cl::Buffer(ctx,
+            static_cast<cl_mem_flags>(CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS),
+            max_M_buf_size, static_cast<void*>(nullptr), &err);
+    check_errors(err, "max_M_buf creation");
+
+    auto helloWorldFile = std::ifstream("init_kernel.cl", std::ifstream::in);
+
+    auto buffer = std::stringstream();
+    buffer << helloWorldFile.rdbuf();
+
+    auto src = buffer.str();
+
+    auto prg = cl::Program(ctx, src, false, &err);
+    check_errors(err, "program creation");
+
+    const auto options = static_cast<const char*>("-D name=\"Ivan\"");
+    err = prg.build(options);
+    check_errors(err, "program compilation");
+    if (err != CL_SUCCESS) {
+        std::cout << "Build error\n";
+        auto info = prg.getBuildInfo<CL_PROGRAM_BUILD_LOG>();
+        for (auto&& i : info) {
+            std::cout << "Device: " << i.first.getInfo<CL_DEVICE_NAME>()
+                      << ", error: " << i.second << '\n';
+        }
+    }
+
+    auto kernel = cl::Kernel(prg, "helloWorld", &err);
+    check_errors(err, "kernel creation");
+
+    auto offset = cl::NullRange;
+    auto global = cl::NDRange(1);
+    auto local  = cl::NDRange(1);
+    auto queue  = cl::CommandQueue(ctx, devices[0]);
+
+    err = queue.enqueueNDRangeKernel(kernel, offset, global, local);
+    check_errors(err, "test kernel call");
 
     return seq.size();
 }

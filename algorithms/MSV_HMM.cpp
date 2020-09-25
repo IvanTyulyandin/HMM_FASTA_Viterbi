@@ -103,12 +103,10 @@ std::string_view get_error_string(cl_int error) {
     }
 }
 
-void check_errors(cl_int res, std::string_view where) {
-    std::cout << where << "... ";
+void check_errors(cl_int res, std::string_view msg) {
     if (res != CL_SUCCESS) {
-        std::cout << get_error_string(res) << '\n';
-    } else {
-        std::cout << "OK\n";
+        std::cout << msg << "... "
+            << get_error_string(res) << '\n';
     }
 }
 
@@ -184,23 +182,20 @@ Log_score MSV_HMM::run_on_sequence(const Protein_sequence& seq) {
 }
 
 Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
+    init_transitions_depend_on_seq(seq);
+
     auto err = cl_int(CL_SUCCESS);
 
+    // Find and setup OpenCL device
     auto platforms = std::vector<cl::Platform>();
     err = cl::Platform::get(&platforms);
     check_errors(err, "platform detection");
 
     auto platform = platforms[0];
 
-    std::cout << "OpenCL version for platform \"" << platform.getInfo<CL_PLATFORM_NAME>()
-           << "\" is \"" << platform.getInfo<CL_PLATFORM_VERSION>() << "\"\n";
-
     auto devices = std::vector<cl::Device>();
     err = platform.getDevices(CL_DEVICE_TYPE_DEFAULT, &devices);
     check_errors(err, "get devices");
-    for (const auto& device: devices) {
-        std::cout << device.getInfo<CL_DEVICE_NAME>() << '\n';
-    }
 
     auto ctx = cl::Context(devices, NULL, NULL, NULL, &err);
     check_errors(err, "context creation");
@@ -217,45 +212,51 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
     const auto C = model_length + 2;
     const auto N = model_length + 3;
     const auto B = model_length + 4;
-    const cl::size_type cols = model_length + 5;
-    const cl::size_type num_of_real_M_states = model_length - 1; // count without dummy M0
+    const auto cols = model_length + 5;
+    const auto num_of_real_M_states = model_length - 1; // count without dummy M0
 
+    // Prepare memory buffers
     constexpr auto NO_HOST_PTR = static_cast<void*>(nullptr);
 
     auto dp_cur = cl::Buffer(ctx,
             static_cast<cl_mem_flags>(CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY), 
-            cols, NO_HOST_PTR, &err);
+            cols * sizeof(Log_score), NO_HOST_PTR, &err);
     check_errors(err, "dp_cur creation");
 
     auto dp_prev = cl::Buffer(ctx,
             static_cast<cl_mem_flags>(CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY), 
-            cols, NO_HOST_PTR, &err);
+            cols * sizeof(Log_score), NO_HOST_PTR, &err);
     check_errors(err, "dp_prev creation");
 
-    auto emissions_buf = cl::Buffer(ctx,
-            static_cast<cl_mem_flags>(CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR),
-            emission_scores.size(), emission_scores.data(), &err);
-    check_errors(err, "emission_buf creation");
+    auto emissions_bufs = std::vector<cl::Buffer>();
+    for (auto i = 0; i < NUM_OF_AMINO_ACIDS; ++i) {
+        emissions_bufs.push_back(
+            cl::Buffer(ctx,
+                static_cast<cl_mem_flags>(CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR),
+                model_length * sizeof(Log_score),
+                static_cast<void*>(emission_scores.data() + model_length * i),
+                &err));
+    }
 
     const auto should_use_M0 = static_cast<int>(num_of_real_M_states % 2 != 0);
     const auto max_M_buf_size = num_of_real_M_states + should_use_M0;
     auto max_M_buf = cl::Buffer(ctx,
             static_cast<cl_mem_flags>(CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS),
-            max_M_buf_size, static_cast<void*>(nullptr), &err);
+            max_M_buf_size * sizeof(Log_score), static_cast<void*>(nullptr), &err);
     check_errors(err, "max_M_buf creation");
 
-    auto helloWorldFile = std::ifstream("init_kernel.cl", std::ifstream::in);
+    // Read and build MSV kernels
+    auto MSV_kernels_code = std::ifstream("MSV_kernels.cl", std::ifstream::in);
 
     auto buffer = std::stringstream();
-    buffer << helloWorldFile.rdbuf();
+    buffer << MSV_kernels_code.rdbuf();
 
     auto src = buffer.str();
 
     auto prg = cl::Program(ctx, src, false, &err);
     check_errors(err, "program creation");
 
-    const auto options = static_cast<const char*>("-D name=\"Ivan\"");
-    err = prg.build(options);
+    err = prg.build();
     check_errors(err, "program compilation");
     if (err != CL_SUCCESS) {
         std::cout << "Build error\n";
@@ -266,16 +267,93 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
         }
     }
 
-    auto kernel = cl::Kernel(prg, "helloWorld", &err);
-    check_errors(err, "kernel creation");
+    auto offset_null_range = cl::NullRange;
+    auto cols_range = cl::NDRange(cols);
+    auto num_of_real_M_states_range = cl::NDRange(num_of_real_M_states);
+    auto max_M_buf_size_range = cl::NDRange(max_M_buf_size);
+    auto local_null_range  = cl::NullRange;
 
-    auto offset = cl::NullRange;
-    auto global = cl::NDRange(1);
-    auto local  = cl::NDRange(1);
-    auto queue  = cl::CommandQueue(ctx, devices[0]);
+    auto queue = cl::CommandQueue(ctx, devices[0]);
 
-    err = queue.enqueueNDRangeKernel(kernel, offset, global, local);
-    check_errors(err, "test kernel call");
+    // Init dynamic programming matrix
+    auto init_kernel = cl::Kernel(prg, "init_dp", &err);
+    init_kernel.setArg(0, dp_prev);
+    err = queue.enqueueNDRangeKernel(init_kernel, offset_null_range, cols_range, local_null_range);
+    check_errors(err, "init_kernel call");
 
-    return seq.size();
+    auto init_N_B_kernel = cl::Kernel(prg, "init_N_B", &err);
+    init_N_B_kernel.setArg(0, dp_prev);
+    init_N_B_kernel.setArg(1, dp_cur);
+    init_N_B_kernel.setArg(2, static_cast<cl_float>(tr_move));
+    init_N_B_kernel.setArg(3, static_cast<cl_uint>(N));
+    init_N_B_kernel.setArg(4, static_cast<cl_uint>(B));
+    // Single task
+    err = queue.enqueueNDRangeKernel(init_N_B_kernel, offset_null_range, cl::NDRange(1), cl::NDRange(1));
+    check_errors(err, "init_N_B_kernel call");
+
+    // Create kernels and set unchanged arguments
+    auto M_states_handler_kernel = cl::Kernel(prg, "M_states_handler", &err);
+    M_states_handler_kernel.setArg(3, static_cast<cl_uint>(B));
+    M_states_handler_kernel.setArg(4, static_cast<cl_float>(tr_B_Mk));
+
+    auto E_J_C_N_B_kernel = cl::Kernel(prg, "E_J_C_N_B_handler", &err);
+    E_J_C_N_B_kernel.setArg(2, max_M_buf);
+    E_J_C_N_B_kernel.setArg(3, static_cast<cl_int>(E));
+    E_J_C_N_B_kernel.setArg(4, static_cast<cl_int>(J));
+    E_J_C_N_B_kernel.setArg(5, static_cast<cl_int>(C));
+    E_J_C_N_B_kernel.setArg(6, static_cast<cl_int>(N));
+    E_J_C_N_B_kernel.setArg(7, static_cast<cl_int>(B));
+    E_J_C_N_B_kernel.setArg(8, static_cast<cl_float>(tr_loop));
+    E_J_C_N_B_kernel.setArg(9, static_cast<cl_float>(tr_move));
+    E_J_C_N_B_kernel.setArg(10, static_cast<cl_float>(tr_E_J));
+    E_J_C_N_B_kernel.setArg(11, static_cast<cl_float>(tr_E_C));
+
+    // Main MSV loop
+    for (size_t i = 1; i < seq.size(); ++i) {
+        const auto acid_num = amino_acid_num.at(seq[i]);
+
+        M_states_handler_kernel.setArg(0, dp_cur);
+        M_states_handler_kernel.setArg(1, dp_prev);
+        M_states_handler_kernel.setArg(2, emissions_bufs[acid_num]);
+
+        err = queue.enqueueNDRangeKernel(M_states_handler_kernel, offset_null_range, num_of_real_M_states_range, local_null_range);
+        check_errors(err, "M_states_handler call");
+
+        // Data preparation to get max from M states
+        auto copy_M_kernel = cl::Kernel(prg, "copy_M", &err);
+        copy_M_kernel.setArg(0, dp_cur);
+        copy_M_kernel.setArg(1, max_M_buf);
+        copy_M_kernel.setArg(2, static_cast<cl_uint>(should_use_M0));
+        err = queue.enqueueNDRangeKernel(copy_M_kernel, offset_null_range, max_M_buf_size_range, local_null_range);
+        check_errors(err, "copy_M call");
+
+        // Find max from M states, max_M_buf size is even
+        auto left_half_size = max_M_buf_size / 2;
+        auto reduction_kernel = cl::Kernel(prg, "reduction_step", &err);
+        reduction_kernel.setArg(0, max_M_buf);
+
+        // Reduction without last comparison of max_M_buf[0] and max_M_buf[1]
+        while (left_half_size > 1) {
+            auto left_half_size_range = cl::NDRange(left_half_size);
+            reduction_kernel.setArg(1, static_cast<cl_uint>(left_half_size));
+
+            err = queue.enqueueNDRangeKernel(reduction_kernel, offset_null_range, left_half_size_range, local_null_range);
+            check_errors(err, "reduction call");
+
+            left_half_size += (left_half_size % 2);
+            left_half_size /= 2;
+        }
+
+        E_J_C_N_B_kernel.setArg(0, dp_cur);
+        E_J_C_N_B_kernel.setArg(1, dp_prev);
+        // Single task to perform last comparison and process special states
+        err = queue.enqueueNDRangeKernel(E_J_C_N_B_kernel, offset_null_range, cl::NDRange(1), cl::NDRange(1));
+        check_errors(err, "E_J_C_N_B_kernel call");
+        std::swap(dp_cur, dp_prev);
+    }
+
+    auto dp_prev_C = Log_score{};
+    err = queue.enqueueReadBuffer(dp_prev, CL_TRUE, C * sizeof(Log_score), sizeof(Log_score), static_cast<void*>(&dp_prev_C));
+    check_errors(err, "read C from dp_prev");
+    return dp_prev_C + tr_move;
 }

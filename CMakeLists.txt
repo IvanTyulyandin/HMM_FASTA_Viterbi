@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 project(HMM_FASTA_processing)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 add_compile_options(-Wall -Wextra -pedantic -Werror -Wno-unused-function -Wno-unused-variable)
 add_compile_options(-march=native -O3 -pipe)
 

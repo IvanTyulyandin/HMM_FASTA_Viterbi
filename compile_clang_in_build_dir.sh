@@ -7,7 +7,7 @@ mkdir -p build/algorithms
 cp -u -r algorithms/*.cl build/algorithms
 cd build
 cmake \
-    -DCMAKE_BUILD_TYPE=Debug \
+    -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_CXX_COMPILER=clang++ \
     ..

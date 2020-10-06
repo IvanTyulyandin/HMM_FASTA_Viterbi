@@ -26,7 +26,13 @@ int main() {
         if (profile.path().extension() == ".hmm") {
             auto msv = MSV_HMM(Profile_HMM(profile.path()));
             for (const auto& protein : fasta.sequences) {
-                assert(almost_equal(msv.run_on_sequence(protein), msv.parallel_run_on_sequence(protein)));
+                auto seq = msv.run_on_sequence(protein);
+                auto par = msv.parallel_run_on_sequence(protein);
+                if (!almost_equal(seq, par)) {
+                    std::cout << "test_MSV failed!\n"
+                         << "Seq: " << seq << ", par " << par << '\n';
+                    exit(1);
+                }
             }
         }
     }

@@ -53,7 +53,11 @@ int main() {
             for (const auto& protein : fasta.sequences) {
                 auto par = msv.parallel_run_on_sequence(protein);
                 auto spec = (*spec_ptr)(protein);
-                assert(almost_equal(par, spec));
+                if (!almost_equal(par, spec)) {
+                    std::cout << "test_MSV_spec failed!\n"
+                         << "seq: " << seq << ", par " << par << '\n';
+                    exit(1);
+                }
             }
         }
     }

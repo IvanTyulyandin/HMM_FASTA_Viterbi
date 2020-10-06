@@ -11,6 +11,7 @@
 
 constexpr float minus_infinity = -std::numeric_limits<float>::infinity();
 
+// MSV data, both for sequential and parallel versions
 namespace {
 
 // Default background frequencies for protein models.
@@ -27,6 +28,83 @@ const auto amino_acid_num = std::unordered_map<char, int>{
     {'A', 0},  {'C', 1},  {'D', 2},  {'E', 3},  {'F', 4},  {'G', 5},  {'H', 6},  {'I', 7},  {'K', 8},  {'L', 9},
     {'M', 10}, {'N', 11}, {'P', 12}, {'Q', 13}, {'R', 14}, {'S', 15}, {'T', 16}, {'V', 17}, {'W', 18}, {'Y', 19}};
 
+} // namespace
+
+MSV_HMM::MSV_HMM(const Profile_HMM& base_hmm) : model_length(base_hmm.model_length) {
+    // base_hmm contains info about M[0]..M[base_hmm.model_length] in match_emissions,
+    // where node M[0] is zero-filled and will be used to simplify indexing.
+    emission_scores = std::vector<Log_score>(NUM_OF_AMINO_ACIDS * model_length);
+
+    for (size_t i = 0; i < model_length; ++i) {
+        for (size_t j = 0; j < NUM_OF_AMINO_ACIDS; ++j) {
+            const auto log_score = std::log(base_hmm.match_emissions[i][j] / background_frequencies[j]);
+            emission_scores[j * model_length + i] = log_score;
+        }
+    }
+
+    // nu is expected number of hits (use 2.0 as a default).
+    // https://github.com/EddyRivasLab/hmmer/blob/master/src/generic_msv.c#L39
+    constexpr float nu = 2.0;
+
+    tr_B_Mk = std::log(2.0f / static_cast<float>(base_hmm.model_length * (base_hmm.model_length + 1)));
+    tr_E_C = std::log((nu - 1.0f) / nu);
+    tr_E_J = std::log(1.0f / nu);
+}
+
+void MSV_HMM::init_transitions_depend_on_seq(const Protein_sequence& seq) {
+    // take into account # at the beginning of Protein_sequence
+    auto size = seq.size() - 1;
+    tr_loop = std::log(size / static_cast<float>(size + 3));
+    tr_move = std::log(3 / static_cast<float>(size + 3));
+}
+
+Log_score MSV_HMM::run_on_sequence(const Protein_sequence& seq) {
+
+    init_transitions_depend_on_seq(seq);
+
+    // Dynamic programming matrix,
+    // where L == seq.length(), k == model_length, both with dummies
+    //
+    //        M0 .. Mk-1 E J C N B
+    // seq0
+    // seq1
+    // ..
+    // seqL-1
+    auto dp = std::vector<std::vector<Log_score>>(seq.length(), std::vector(model_length + 5, minus_infinity));
+
+    // E, J, C, N, B states indices
+    const auto E = model_length;
+    const auto J = model_length + 1;
+    const auto C = model_length + 2;
+    const auto N = model_length + 3;
+    const auto B = model_length + 4;
+
+    // dp matrix initialization
+    dp[0][N] = 0.0;
+    dp[0][B] = tr_move; // tr_N_B
+
+    // MSV main loop
+    for (size_t i = 1; i < seq.size(); ++i) {
+        const auto stride = amino_acid_num.at(seq[i]) * model_length;
+        for (size_t j = 1; j < model_length; ++j) {
+            dp[i][j] = emission_scores[stride + j] + std::max(dp[i - 1][j - 1], dp[i - 1][B] + tr_B_Mk);
+            dp[i][E] = std::max(dp[i][E], dp[i][j]);
+        }
+
+        dp[i][J] = std::max(dp[i - 1][J] + tr_loop, dp[i][E] + tr_E_J);
+        dp[i][C] = std::max(dp[i - 1][C] + tr_loop, dp[i][E] + tr_E_C);
+        dp[i][N] = dp[i - 1][N] + tr_loop;
+        dp[i][B] = std::max(dp[i][N] + tr_move, dp[i][J] + tr_move);
+    }
+    return dp.back()[C] + tr_move;
+}
+
+
+// OpenCL specific functions namespace 
+namespace {
+constexpr auto NO_HOST_PTR = static_cast<void*>(nullptr);
+
+// Convert cl_int error code to reason
 std::string_view get_error_string(cl_int error) {
     switch(error) {
         // run-time and JIT compiler errors
@@ -103,6 +181,7 @@ std::string_view get_error_string(cl_int error) {
     }
 }
 
+
 void check_errors(cl_int res, std::string_view msg) {
     if (res != CL_SUCCESS) {
         std::cout << msg << "... "
@@ -110,83 +189,10 @@ void check_errors(cl_int res, std::string_view msg) {
     }
 }
 
-} // namespace
 
-MSV_HMM::MSV_HMM(const Profile_HMM& base_hmm) : model_length(base_hmm.model_length) {
-    // base_hmm contains info about M[0]..M[base_hmm.model_length] in match_emissions,
-    // where node M[0] is zero-filled and will be used to simplify indexing.
-    emission_scores = std::vector<Log_score>(NUM_OF_AMINO_ACIDS * model_length);
-
-    for (size_t i = 0; i < model_length; ++i) {
-        for (size_t j = 0; j < NUM_OF_AMINO_ACIDS; ++j) {
-            const auto log_score = std::log(base_hmm.match_emissions[i][j] / background_frequencies[j]);
-            emission_scores[j * model_length + i] = log_score;
-        }
-    }
-
-    // nu is expected number of hits (use 2.0 as a default).
-    // https://github.com/EddyRivasLab/hmmer/blob/master/src/generic_msv.c#L39
-    constexpr float nu = 2.0;
-
-    tr_B_Mk = std::log(2.0f / static_cast<float>(base_hmm.model_length * (base_hmm.model_length + 1)));
-    tr_E_C = std::log((nu - 1.0f) / nu);
-    tr_E_J = std::log(1.0f / nu);
-}
-
-void MSV_HMM::init_transitions_depend_on_seq(const Protein_sequence& seq) {
-    // take into account # at the beginning of Protein_sequence
-    auto size = seq.size() - 1;
-    tr_loop = std::log(size / static_cast<float>(size + 3));
-    tr_move = std::log(3 / static_cast<float>(size + 3));
-}
-
-Log_score MSV_HMM::run_on_sequence(const Protein_sequence& seq) {
-
-    init_transitions_depend_on_seq(seq);
-
-    // Dynamic programming matrix,
-    // where L == seq.length(), k == model_length, both with dummies
-    //
-    //        M0 .. Mk-1 E J C N B
-    // seq0
-    // seq1
-    // ..
-    // seqL-1
-    auto dp = std::vector<std::vector<Log_score>>(seq.length(), std::vector(model_length + 5, minus_infinity));
-
-    // E, J, C, N, B states indices
-    const auto E = model_length;
-    const auto J = model_length + 1;
-    const auto C = model_length + 2;
-    const auto N = model_length + 3;
-    const auto B = model_length + 4;
-
-    // dp matrix initialization
-    dp[0][N] = 0.0;
-    dp[0][B] = tr_move; // tr_N_B
-
-    // MSV main loop
-    for (size_t i = 1; i < seq.size(); ++i) {
-        const auto stride = amino_acid_num.at(seq[i]) * model_length;
-        for (size_t j = 1; j < model_length; ++j) {
-            dp[i][j] = emission_scores[stride + j] + std::max(dp[i - 1][j - 1], dp[i - 1][B] + tr_B_Mk);
-            dp[i][E] = std::max(dp[i][E], dp[i][j]);
-        }
-
-        dp[i][J] = std::max(dp[i - 1][J] + tr_loop, dp[i][E] + tr_E_J);
-        dp[i][C] = std::max(dp[i - 1][C] + tr_loop, dp[i][E] + tr_E_C);
-        dp[i][N] = dp[i - 1][N] + tr_loop;
-        dp[i][B] = std::max(dp[i][N] + tr_move, dp[i][J] + tr_move);
-    }
-    return dp.back()[C] + tr_move;
-}
-
-Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
-    init_transitions_depend_on_seq(seq);
-
+// Find and setup OpenCL context
+std::pair<cl::Context, cl::Device> create_context_with_default_device() {
     auto err = cl_int(CL_SUCCESS);
-
-    // Find and setup OpenCL device
     auto platforms = std::vector<cl::Platform>();
     err = cl::Platform::get(&platforms);
     check_errors(err, "platform detection");
@@ -197,8 +203,56 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
     err = platform.getDevices(CL_DEVICE_TYPE_DEFAULT, &devices);
     check_errors(err, "get devices");
 
-    auto ctx = cl::Context(devices, NULL, NULL, NULL, &err);
+    auto selected_device = devices[0];
+    auto ctx = cl::Context(selected_device, NULL, NULL, NULL, &err);
     check_errors(err, "context creation");
+
+    return std::make_pair(ctx, selected_device);
+}
+
+
+// Read and build kernels with provided options in context
+cl::Program get_cl_program_from_file(const cl::Context& ctx, std::string file_name, std::string_view options) {
+    auto err = cl_int(CL_SUCCESS);
+    auto kernels_code = std::ifstream(file_name, std::ifstream::in);
+    auto buffer = std::stringstream();
+    buffer << kernels_code.rdbuf();
+    auto src = buffer.str();
+
+    auto program = cl::Program(ctx, src, false, &err);
+    check_errors(err, std::string("program creation from ").append(file_name));
+
+    err = program.build(options.data());
+    check_errors(err, std::string("program compilation from ").append(file_name));
+    if (err != CL_SUCCESS) {
+        std::cout << "Build error\n";
+        auto info = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>();
+        for (const auto& i : info) {
+            std::cout << "Device: " << i.first.getInfo<CL_DEVICE_NAME>()
+                      << ", error: " << i.second << '\n';
+        }
+    }
+    return program;
+}
+
+
+cl::Buffer create_dp_row(const cl::Context& ctx, size_t cols) {
+    auto err = cl_int(CL_SUCCESS);
+    auto buffer = cl::Buffer(ctx,
+            static_cast<cl_mem_flags>(CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY), 
+            cols * sizeof(Log_score), NO_HOST_PTR, &err);
+    check_errors(err, "dp_row creation");
+    return buffer;
+}
+} //namespace
+
+Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
+    init_transitions_depend_on_seq(seq);
+
+    constexpr std::string_view EMPTY_OPTIONS = "";
+    auto [ctx, device] = create_context_with_default_device();
+    auto prg = get_cl_program_from_file(ctx, "MSV_kernels.cl", EMPTY_OPTIONS);
+    auto err = cl_int(CL_SUCCESS);
 
     // Dynamic programming matrix,
     // where k == model_length with dummy
@@ -216,17 +270,9 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
     const auto num_of_real_M_states = model_length - 1; // count without dummy M0
 
     // Prepare memory buffers
-    constexpr auto NO_HOST_PTR = static_cast<void*>(nullptr);
 
-    auto dp_cur = cl::Buffer(ctx,
-            static_cast<cl_mem_flags>(CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY), 
-            cols * sizeof(Log_score), NO_HOST_PTR, &err);
-    check_errors(err, "dp_cur creation");
-
-    auto dp_prev = cl::Buffer(ctx,
-            static_cast<cl_mem_flags>(CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY), 
-            cols * sizeof(Log_score), NO_HOST_PTR, &err);
-    check_errors(err, "dp_prev creation");
+    auto dp_cur = create_dp_row(ctx, cols);
+    auto dp_prev = create_dp_row(ctx, cols);
 
     auto emissions_bufs = std::vector<cl::Buffer>();
     for (auto i = 0; i < NUM_OF_AMINO_ACIDS; ++i) {
@@ -242,30 +288,8 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
     const auto max_M_buf_size = num_of_real_M_states + should_use_M0;
     auto max_M_buf = cl::Buffer(ctx,
             static_cast<cl_mem_flags>(CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS),
-            max_M_buf_size * sizeof(Log_score), static_cast<void*>(nullptr), &err);
+            max_M_buf_size * sizeof(Log_score), NO_HOST_PTR, &err);
     check_errors(err, "max_M_buf creation");
-
-    // Read and build MSV kernels
-    auto MSV_kernels_code = std::ifstream("MSV_kernels.cl", std::ifstream::in);
-
-    auto buffer = std::stringstream();
-    buffer << MSV_kernels_code.rdbuf();
-
-    auto src = buffer.str();
-
-    auto prg = cl::Program(ctx, src, false, &err);
-    check_errors(err, "program creation");
-
-    err = prg.build();
-    check_errors(err, "program compilation");
-    if (err != CL_SUCCESS) {
-        std::cout << "Build error\n";
-        auto info = prg.getBuildInfo<CL_PROGRAM_BUILD_LOG>();
-        for (auto&& i : info) {
-            std::cout << "Device: " << i.first.getInfo<CL_DEVICE_NAME>()
-                      << ", error: " << i.second << '\n';
-        }
-    }
 
     auto offset_null_range = cl::NullRange;
     auto cols_range = cl::NDRange(cols);
@@ -273,7 +297,7 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
     auto max_M_buf_size_range = cl::NDRange(max_M_buf_size);
     auto local_null_range  = cl::NullRange;
 
-    auto queue = cl::CommandQueue(ctx, devices[0]);
+    auto queue = cl::CommandQueue(ctx, device);
 
     // Init dynamic programming matrix
     auto init_kernel = cl::Kernel(prg, "init_dp", &err);
@@ -353,7 +377,8 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
     }
 
     auto dp_prev_C = Log_score{};
-    err = queue.enqueueReadBuffer(dp_prev, CL_TRUE, C * sizeof(Log_score), sizeof(Log_score), static_cast<void*>(&dp_prev_C));
+    auto C_offset_in_dp_prev = C * sizeof(Log_score);
+    err = queue.enqueueReadBuffer(dp_prev, CL_TRUE, C_offset_in_dp_prev, sizeof(Log_score), static_cast<void*>(&dp_prev_C));
     check_errors(err, "read C from dp_prev");
     return dp_prev_C + tr_move;
 }

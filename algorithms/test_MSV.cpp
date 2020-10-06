@@ -25,8 +25,13 @@ int main() {
     for (const auto& profile : fs::directory_iterator("../profile_HMMs")) {
         if (profile.path().extension() == ".hmm") {
             auto msv = MSV_HMM(Profile_HMM(profile.path()));
+            auto seq = msv.run_on_sequence(protein);
+            auto par = msv.parallel_run_on_sequence(protein);
             for (const auto& protein : fasta.sequences) {
-                assert(almost_equal(msv.run_on_sequence(protein), msv.parallel_run_on_sequence(protein)));
+                if (!almost_equal(seq, par)) {
+                    std::cout << "test_MSV failed! Seq " << seq << ", par " << par <<'\n';
+                    exit(1);
+                }
             }
         }
     }

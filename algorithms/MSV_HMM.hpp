@@ -18,7 +18,7 @@ class MSV_HMM {
 
     Log_score run_on_sequence(const Protein_sequence& seq);
 
-    Log_score parallel_run_on_sequence(const Protein_sequence& seq);
+    Log_score parallel_run_on_sequence(const Protein_sequence& seq, bool should_specialize = false);
 
   private:
     size_t model_length;

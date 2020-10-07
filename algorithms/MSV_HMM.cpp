@@ -246,13 +246,9 @@ cl::Buffer create_dp_row(const cl::Context& ctx, size_t cols) {
 }
 } //namespace
 
-Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
-    init_transitions_depend_on_seq(seq);
 
-    constexpr std::string_view EMPTY_OPTIONS = "";
-    auto [ctx, device] = create_context_with_default_device();
-    auto prg = get_cl_program_from_file(ctx, "MSV_kernels.cl", EMPTY_OPTIONS);
-    auto err = cl_int(CL_SUCCESS);
+Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq, bool should_specialize) {
+    init_transitions_depend_on_seq(seq);
 
     // Dynamic programming matrix,
     // where k == model_length with dummy
@@ -269,8 +265,10 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
     const auto cols = model_length + 5;
     const auto num_of_real_M_states = model_length - 1; // count without dummy M0
 
-    // Prepare memory buffers
+    auto [ctx, device] = create_context_with_default_device();
+    auto err = cl_int(CL_SUCCESS);
 
+    // Prepare memory buffers
     auto dp_cur = create_dp_row(ctx, cols);
     auto dp_prev = create_dp_row(ctx, cols);
 
@@ -299,38 +297,67 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
 
     auto queue = cl::CommandQueue(ctx, device);
 
+    // Build a bunch of kernels.
+    // In both files kernels have the same names.
+    // If user wants to use specialization, then pass #define'd constants for JIT compiler via options
+    auto program = cl::Program();
+    auto options = std::string("");
+    if (should_specialize) {
+        options +=
+            "-D E=" + std::to_string(E) +
+            " -D J=" + std::to_string(J) +
+            " -D C=" + std::to_string(C) +
+            " -D N=" + std::to_string(N) +
+            " -D B=" + std::to_string(B) +
+            " -D tr_B_Mk=" + std::to_string(tr_B_Mk) +
+            " -D tr_E_C=" + std::to_string(tr_E_C) +
+            " -D tr_E_J=" + std::to_string(tr_E_J) +
+            " -D tr_move=" + std::to_string(tr_move) +
+            " -D tr_loop=" + std::to_string(tr_loop) +
+            " -D should_use_M0=" + std::to_string(should_use_M0);
+        program = get_cl_program_from_file(ctx, "MSV_spec_kernels.cl", options);
+    } else {
+        program = get_cl_program_from_file(ctx, "MSV_kernels.cl", options);
+    }
+
     // Init dynamic programming matrix
-    auto init_kernel = cl::Kernel(prg, "init_dp", &err);
+    auto init_kernel = cl::Kernel(program, "init_dp", &err);
     init_kernel.setArg(0, dp_prev);
     err = queue.enqueueNDRangeKernel(init_kernel, offset_null_range, cols_range, local_null_range);
     check_errors(err, "init_kernel call");
 
-    auto init_N_B_kernel = cl::Kernel(prg, "init_N_B", &err);
+    auto init_N_B_kernel = cl::Kernel(program, "init_N_B", &err);
     init_N_B_kernel.setArg(0, dp_prev);
     init_N_B_kernel.setArg(1, dp_cur);
-    init_N_B_kernel.setArg(2, static_cast<cl_float>(tr_move));
-    init_N_B_kernel.setArg(3, static_cast<cl_uint>(N));
-    init_N_B_kernel.setArg(4, static_cast<cl_uint>(B));
+    if (!should_specialize) {
+        init_N_B_kernel.setArg(2, static_cast<cl_float>(tr_move));
+        init_N_B_kernel.setArg(3, static_cast<cl_uint>(N));
+        init_N_B_kernel.setArg(4, static_cast<cl_uint>(B));
+    }
     // Single task
     err = queue.enqueueNDRangeKernel(init_N_B_kernel, offset_null_range, cl::NDRange(1), cl::NDRange(1));
     check_errors(err, "init_N_B_kernel call");
 
     // Create kernels and set unchanged arguments
-    auto M_states_handler_kernel = cl::Kernel(prg, "M_states_handler", &err);
-    M_states_handler_kernel.setArg(3, static_cast<cl_uint>(B));
-    M_states_handler_kernel.setArg(4, static_cast<cl_float>(tr_B_Mk));
+    auto M_states_handler_kernel = cl::Kernel(program, "M_states_handler", &err);
+    if (!should_specialize) {
+        M_states_handler_kernel.setArg(3, static_cast<cl_uint>(B));
+        M_states_handler_kernel.setArg(4, static_cast<cl_float>(tr_B_Mk));
+    }
 
-    auto E_J_C_N_B_kernel = cl::Kernel(prg, "E_J_C_N_B_handler", &err);
+    auto E_J_C_N_B_kernel = cl::Kernel(program, "E_J_C_N_B_handler", &err);
     E_J_C_N_B_kernel.setArg(2, max_M_buf);
-    E_J_C_N_B_kernel.setArg(3, static_cast<cl_int>(E));
-    E_J_C_N_B_kernel.setArg(4, static_cast<cl_int>(J));
-    E_J_C_N_B_kernel.setArg(5, static_cast<cl_int>(C));
-    E_J_C_N_B_kernel.setArg(6, static_cast<cl_int>(N));
-    E_J_C_N_B_kernel.setArg(7, static_cast<cl_int>(B));
-    E_J_C_N_B_kernel.setArg(8, static_cast<cl_float>(tr_loop));
-    E_J_C_N_B_kernel.setArg(9, static_cast<cl_float>(tr_move));
-    E_J_C_N_B_kernel.setArg(10, static_cast<cl_float>(tr_E_J));
-    E_J_C_N_B_kernel.setArg(11, static_cast<cl_float>(tr_E_C));
+    if (!should_specialize) {
+        E_J_C_N_B_kernel.setArg(3, static_cast<cl_int>(E));
+        E_J_C_N_B_kernel.setArg(4, static_cast<cl_int>(J));
+        E_J_C_N_B_kernel.setArg(5, static_cast<cl_int>(C));
+        E_J_C_N_B_kernel.setArg(6, static_cast<cl_int>(N));
+        E_J_C_N_B_kernel.setArg(7, static_cast<cl_int>(B));
+        E_J_C_N_B_kernel.setArg(8, static_cast<cl_float>(tr_loop));
+        E_J_C_N_B_kernel.setArg(9, static_cast<cl_float>(tr_move));
+        E_J_C_N_B_kernel.setArg(10, static_cast<cl_float>(tr_E_J));
+        E_J_C_N_B_kernel.setArg(11, static_cast<cl_float>(tr_E_C));
+    }
 
     // Main MSV loop
     for (size_t i = 1; i < seq.size(); ++i) {
@@ -344,7 +371,7 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
         check_errors(err, "M_states_handler call");
 
         // Data preparation to get max from M states
-        auto copy_M_kernel = cl::Kernel(prg, "copy_M", &err);
+        auto copy_M_kernel = cl::Kernel(program, "copy_M", &err);
         copy_M_kernel.setArg(0, dp_cur);
         copy_M_kernel.setArg(1, max_M_buf);
         copy_M_kernel.setArg(2, static_cast<cl_uint>(should_use_M0));
@@ -353,7 +380,7 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq) {
 
         // Find max from M states, max_M_buf size is even
         auto left_half_size = max_M_buf_size / 2;
-        auto reduction_kernel = cl::Kernel(prg, "reduction_step", &err);
+        auto reduction_kernel = cl::Kernel(program, "reduction_step", &err);
         reduction_kernel.setArg(0, max_M_buf);
 
         // Reduction without last comparison of max_M_buf[0] and max_M_buf[1]

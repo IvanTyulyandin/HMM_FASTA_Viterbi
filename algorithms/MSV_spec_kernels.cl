@@ -4,10 +4,7 @@ kernel void init_dp(__global float* zero_row) {
 
 kernel void init_N_B(
     __global float* restrict zero_row,
-    __global float* restrict first_row,
-    float tr_move,
-    uint N,
-    uint B)
+    __global float* restrict first_row)
 {
     first_row[0] = -INFINITY;
     zero_row[N] = 0.0;
@@ -17,19 +14,16 @@ kernel void init_N_B(
 kernel void M_states_handler(
     __global float* restrict dp_cur,
     __global const float* restrict dp_prev,
-    __constant float* restrict emissions,
-    uint B,
-    float tr_B_Mk)
+    __constant float* restrict emissions)
 {
     size_t cur_col = get_global_id(0) + 1;
     dp_cur[cur_col] = emissions[cur_col] + 
-        fmax(dp_prev[cur_col - 1], dp_prev[B] + tr_B_Mk);
+        fmax(dp_prev[cur_col - 1], dp_prev[B] + (float)tr_B_Mk);
 }
 
 kernel void copy_M(
     __global const float* restrict dp_cur,
-    __global float* restrict M_buf,
-    uint should_use_M0)
+    __global float* restrict M_buf)
 {
     size_t id = get_global_id(0);
     M_buf[id] = dp_cur[id + 1 - should_use_M0];
@@ -46,16 +40,7 @@ kernel void reduction_step(
 kernel void E_J_C_N_B_handler(
     __global float* restrict dp_cur,
     __global const float* restrict dp_prev,
-    __global const float* restrict M_buf,
-    uint E,
-    uint J,
-    uint C,
-    uint N,
-    uint B,
-    float tr_loop,
-    float tr_move,
-    float tr_E_J,
-    float tr_E_C)
+    __global const float* restrict M_buf)
 {
     dp_cur[E] = fmax(M_buf[0], M_buf[1]);
     dp_cur[J] = fmax(dp_prev[J] + tr_loop, dp_cur[E] + tr_E_J);

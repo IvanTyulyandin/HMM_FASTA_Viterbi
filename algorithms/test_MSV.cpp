@@ -6,15 +6,9 @@
 #include <experimental/filesystem>
 #include <iostream>
 
-// code below was taken from
-// https://en.cppreference.com/w/cpp/types/numeric_limits/epsilon
 template <class T>
-typename std::enable_if<!std::numeric_limits<T>::is_integer, bool>::type almost_equal(T x, T y, int ulp = 5) {
-    // the machine epsilon has to be scaled to the magnitude of the values used
-    // and multiplied by the desired precision in ULPs (units in the last place)
-    return std::fabs(x - y) <= std::numeric_limits<T>::epsilon() * std::fabs(x + y) * ulp
-           // unless the result is subnormal
-           || std::fabs(x - y) < std::numeric_limits<T>::min();
+typename std::enable_if<!std::numeric_limits<T>::is_integer, bool>::type almost_equal(T x, T y) {
+    return std::fabs(x - y) <= 0.0001;
 }
 
 int main() {
@@ -28,9 +22,10 @@ int main() {
             for (const auto& protein : fasta.sequences) {
                 auto seq = msv.run_on_sequence(protein);
                 auto par = msv.parallel_run_on_sequence(protein);
-                if (!almost_equal(seq, par)) {
+                auto par_spec = msv.parallel_run_on_sequence(protein, true);
+                if (!almost_equal(seq, par) || !almost_equal(par, par_spec)) {
                     std::cout << "test_MSV failed!\n"
-                         << "Seq: " << seq << ", par " << par << '\n';
+                         << "Seq: " << seq << ", par " << par << ", par_spec " << par_spec << '\n';
                     exit(1);
                 }
             }

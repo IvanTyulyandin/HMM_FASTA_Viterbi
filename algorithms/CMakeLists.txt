@@ -15,11 +15,11 @@ target_link_libraries(test_MSV stdc++fs)
 
 add_test(test_MSV test_MSV)
 
-add_executable(benchmark_MSV benchmark_MSV.cpp)
+add_executable(benchmark_MSV benchmark_helper.hpp benchmark_MSV.cpp)
 target_link_libraries(benchmark_MSV algorithms)
 target_link_libraries(benchmark_MSV data_readers)
 target_link_libraries(benchmark_MSV stdc++fs)
 
-add_executable(benchmark_MSV_1400 benchmark_MSV_1400.cpp)
+add_executable(benchmark_MSV_1400 benchmark_helper.hpp benchmark_MSV_1400.cpp)
 target_link_libraries(benchmark_MSV_1400 algorithms)
 target_link_libraries(benchmark_MSV_1400 data_readers)

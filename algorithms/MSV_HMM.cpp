@@ -1,5 +1,7 @@
 #include "MSV_HMM.hpp"
 
+#define CL_HPP_MINIMUM_OPENCL_VERSION 120
+#define CL_HPP_TARGET_OPENCL_VERSION 120
 #include <CL/cl2.hpp>
 #include <algorithm>
 #include <cmath>
@@ -191,7 +193,7 @@ void check_errors(cl_int res, std::string_view msg) {
 
 
 // Find and setup OpenCL context
-std::pair<cl::Context, cl::Device> create_context_with_default_device() {
+cl::Context create_context_with_default_device() {
     auto err = cl_int(CL_SUCCESS);
     auto platforms = std::vector<cl::Platform>();
     err = cl::Platform::get(&platforms);
@@ -199,15 +201,25 @@ std::pair<cl::Context, cl::Device> create_context_with_default_device() {
 
     auto platform = platforms[0];
 
+    constexpr std::string_view preferred_platform = "NVIDIA";
+    for (const auto& pl : platforms) {
+        auto pl_name = std::string();
+        err = pl.getInfo(CL_PLATFORM_NAME, &pl_name);
+        check_errors(err, "platform name");
+        if (pl_name.find(preferred_platform) != std::string::npos) {
+            platform = pl;
+            break;
+        }
+    }
+
     auto devices = std::vector<cl::Device>();
     err = platform.getDevices(CL_DEVICE_TYPE_DEFAULT, &devices);
     check_errors(err, "get devices");
 
-    auto selected_device = devices[0];
-    auto ctx = cl::Context(selected_device, NULL, NULL, NULL, &err);
+    auto ctx = cl::Context(devices, NULL, NULL, NULL, &err);
     check_errors(err, "context creation");
 
-    return std::make_pair(ctx, selected_device);
+    return ctx;
 }
 
 
@@ -265,7 +277,7 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq, bool sh
     const auto cols = model_length + 5;
     const auto num_of_real_M_states = model_length - 1; // count without dummy M0
 
-    auto [ctx, device] = create_context_with_default_device();
+    auto ctx = create_context_with_default_device();
     auto err = cl_int(CL_SUCCESS);
 
     // Prepare memory buffers
@@ -295,7 +307,8 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq, bool sh
     auto max_M_buf_size_range = cl::NDRange(max_M_buf_size);
     auto local_null_range  = cl::NullRange;
 
-    auto queue = cl::CommandQueue(ctx, device);
+    auto queue = cl::CommandQueue(ctx, 0, &err);
+    check_errors(err, "queue creation");
 
     // Build a bunch of kernels.
     // In both files kernels have the same names.

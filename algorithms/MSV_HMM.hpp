@@ -12,6 +12,8 @@ template <int N> using Log_scores_array = std::array<Log_score, N>;
 
 template <int N> using Log_scores_arrays_vector = std::vector<Log_scores_array<N>>;
 
+using Kernels_source_code = std::string;
+
 class MSV_HMM {
   public:
     explicit MSV_HMM(const Profile_HMM& base_hmm);
@@ -34,5 +36,9 @@ class MSV_HMM {
     Log_score tr_E_C;
     Log_score tr_E_J;
 
+    Kernels_source_code kernels_code;
+    Kernels_source_code spec_kernels_code;
+
     void init_transitions_depend_on_seq(const Protein_sequence& seq);
+    Kernels_source_code read_kernels_code(const std::string& file_name);
 };

@@ -51,6 +51,9 @@ MSV_HMM::MSV_HMM(const Profile_HMM& base_hmm) : model_length(base_hmm.model_leng
     tr_B_Mk = std::log(2.0f / static_cast<float>(base_hmm.model_length * (base_hmm.model_length + 1)));
     tr_E_C = std::log((nu - 1.0f) / nu);
     tr_E_J = std::log(1.0f / nu);
+
+    kernels_code = read_kernels_code("MSV_kernels.cl");
+    spec_kernels_code = read_kernels_code("MSV_spec_kernels.cl");
 }
 
 void MSV_HMM::init_transitions_depend_on_seq(const Protein_sequence& seq) {
@@ -59,6 +62,14 @@ void MSV_HMM::init_transitions_depend_on_seq(const Protein_sequence& seq) {
     tr_loop = std::log(size / static_cast<float>(size + 3));
     tr_move = std::log(3 / static_cast<float>(size + 3));
 }
+
+Kernels_source_code MSV_HMM::read_kernels_code(const std::string& file_name) {
+    auto kernels_code = std::ifstream(file_name, std::ifstream::in);
+    auto buffer = std::stringstream();
+    buffer << kernels_code.rdbuf();
+    return buffer.str();
+}
+
 
 Log_score MSV_HMM::run_on_sequence(const Protein_sequence& seq) {
 
@@ -223,19 +234,15 @@ cl::Context create_context_with_default_device() {
 }
 
 
-// Read and build kernels with provided options in context
-cl::Program get_cl_program_from_file(const cl::Context& ctx, std::string file_name, std::string_view options) {
+// Build kernels with provided options in context from sources
+cl::Program get_cl_program_from_sources(const cl::Context& ctx, const std::string& source_code, std::string_view options) {
     auto err = cl_int(CL_SUCCESS);
-    auto kernels_code = std::ifstream(file_name, std::ifstream::in);
-    auto buffer = std::stringstream();
-    buffer << kernels_code.rdbuf();
-    auto src = buffer.str();
 
-    auto program = cl::Program(ctx, src, false, &err);
-    check_errors(err, std::string("program creation from ").append(file_name));
+    auto program = cl::Program(ctx, source_code, false, &err);
+    check_errors(err, std::string("program creation"));
 
     err = program.build(options.data());
-    check_errors(err, std::string("program compilation from ").append(file_name));
+    check_errors(err, std::string("program compilation"));
     if (err != CL_SUCCESS) {
         std::cout << "Build error\n";
         auto info = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>();
@@ -310,7 +317,6 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq, bool sh
     auto queue = cl::CommandQueue(ctx, 0, &err);
     check_errors(err, "queue creation");
 
-    // Build a bunch of kernels.
     // In both files kernels have the same names.
     // If user wants to use specialization, then pass #define'd constants for JIT compiler via options
     auto program = cl::Program();
@@ -328,9 +334,9 @@ Log_score MSV_HMM::parallel_run_on_sequence(const Protein_sequence& seq, bool sh
             " -D tr_move=" + std::to_string(tr_move) +
             " -D tr_loop=" + std::to_string(tr_loop) +
             " -D should_use_M0=" + std::to_string(should_use_M0);
-        program = get_cl_program_from_file(ctx, "MSV_spec_kernels.cl", options);
+        program = get_cl_program_from_sources(ctx, spec_kernels_code, options);
     } else {
-        program = get_cl_program_from_file(ctx, "MSV_kernels.cl", options);
+        program = get_cl_program_from_sources(ctx, kernels_code, options);
     }
 
     // Init dynamic programming matrix
